@@ -1,0 +1,19 @@
+# Arquivo de Dependências do Projeto
+
+# Core para LLMs e PyTorch
+torch
+transformers
+
+# Frameworks de RAG e Agentes
+langchain
+llama-index
+
+# Bancos Vetoriais (RAG)
+faiss-cpu # Use 'faiss-gpu' se todos tiverem GPUs NVIDIA
+chromadb
+
+# Análise e Manipulação de Dados
+pandas
+
+# Para experimentação em Notebooks
+jupyter
