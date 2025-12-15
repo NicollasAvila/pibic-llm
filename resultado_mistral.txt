@@ -1,0 +1,17 @@
+MODELO: ollama/mistral
+TEMPO: 374.92s
+----------------------------------------
+ ### Incidente ID 1 - Ataque ao uso ilegal de API no PowerShell
+
+- ETAPAS DO ATAQUE (Passo a passo técnico):
+  - O sistema detectou uma atividade suspeita na máquina "SRVEPO" com o nome do usuário "SYSTEM", executando um processo do "PowerShell.exe".
+  - A atividade envolve o uso de uma API proibida pelo software "Trellix Endpoint Security" (módulo AtlComPtrAssign).
+- AVALIAÇÃO (IoCs, IPs, Hashes):
+  - Máquina: SRVEPO, IP: 177.74.1.190, Sistema Operacional: Windows Server 2012, Software: Trellix Endpoint Security
+  - Analisador de Regra: Powershell Command Restriction - NoProfile, IDS_NATURAL_LANG_DESC_DETECTION_BOP_2N
+- MITIGAÇÃO (Ações preventivas):
+  - Ajuste a política de segurança para bloquear o uso de APIs proibidas pelo "Trellix Endpoint Security".
+  - Realize uma análise mais detalhada do código que usou a API proibida.
+- CONTENÇÃO (Ações imediatas):
+  - Bloqueie o processo PowerShell no momento atual e monitore a máquina para detectar outras atividades suspeitas.
+  - Notifique o time de operações de segurança sobre os eventos detetados.

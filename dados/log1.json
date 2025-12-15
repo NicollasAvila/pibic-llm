@@ -1,0 +1,40 @@
+{
+    "timestamp": "2025-12-10T16:04:49.801+0000",
+    "rule": {
+        "level": 7,
+        "description": "Trellix - Uso de API ilegal",
+        "id": "100601",
+        "firedtimes": 1,
+        "mail": false,
+        "groups": [
+            "mcafee_epo",
+            "paloalto"
+        ]
+    },
+    "agent": {
+        "id": "000",
+        "name": "poc-coleta-log"
+    },
+    "manager": {
+        "name": "poc-coleta-log"
+    },
+    "id": "1765382689.306221254",
+    "full_log": "2025-12-10T16:04:50.0Z SRVEPO EPOEvents ...",
+    "decoder": {
+        "name": "mcafee-epo2"
+    },
+    "data": {
+        "machine_name": "SRVEPO",
+        "agent_guid": "{42f8c500-36d8-11e9-3a98-005056ac87a3}",
+        "ip": {
+            "address": "177.74.1.190"
+        },
+        "os": {
+            "name": "Windows Server 2012"
+        },
+        "username": "SYSTEM",
+        "product_name": "Trellix Endpoint Security",
+        "ThreatName": "ExP:Illegal API Use",
+        "TargetProcessName": "POWERSHELL.EXE"
+    }
+}

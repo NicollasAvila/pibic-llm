@@ -1,75 +1,127 @@
+
 ````markdown
-# Geração Automática de Planos de Ação para Resposta a Ataques de Rede (PIBIC)
+# Benchmarking de SLMs para Resposta a Incidentes (PIBIC)
 
-Este é o repositório oficial do projeto de Iniciação Científica (PIBIC/UEPA) focado no desenvolvimento de uma metodologia baseada em IA Generativa para resposta a incidentes de cibersegurança.
+Este repositório contém os scripts e dados utilizados na pesquisa de Iniciação Científica (UEPA) sobre o uso de **Small Language Models (SLMs)** locais para a geração automática de Playbooks de Resposta a Incidentes de Cibersegurança.
 
-## 🚀 Configuração do Ambiente de Desenvolvimento
+O objetivo é validar a capacidade de modelos leves (rodando em CPU/Notebooks) de interpretar logs de segurança (JSON) e gerar planos de ação técnicos.
 
-Para garantir que todos os membros da equipe tenham um ambiente idêntico, siga estes passos.
+## 📋 Pré-requisitos
 
-### 1. Pré-requisitos
+Para rodar este projeto, você precisará de:
 
-* **Python:** Tenha o [Python](https://www.python.org/downloads/) (versão 3.10 ou superior) instalado.
-* **Git:** Tenha o [Git](https://git-scm.com/downloads) instalado.
-* **VS Code:** Recomendamos o [Visual Studio Code](https://code.visualstudio.com/) como IDE com a extensão oficial "Python".
+1.  **Python 3.10+** instalado.
+2.  **[Ollama](https://ollama.com/)** instalado e rodando em segundo plano (essencial para gerenciar os modelos).
+3.  **Git** para clonar o repositório.
 
-### 2. Clonar o Repositório
+## 🚀 Instalação e Configuração
 
-Primeiro, clone este repositório para o seu computador:
+Siga os passos abaixo para preparar o ambiente de desenvolvimento.
+
+### 1. Clonar o Repositório
 
 ```bash
-git clone [URL_DO_SEU_REPOSITORIO_AQUI]
-cd [NOME_DO_SEU_REPOSITORIO]
+git clone [URL_DO_SEU_REPOSITORIO]
+cd [NOME_DA_PASTA]
 ````
 
-### 3\. Criar o Ambiente Virtual
+### 2\. Criar e Ativar o Ambiente Virtual
 
-Usaremos um ambiente virtual (`.venv`) para isolar as dependências do projeto.
+Isolamos as dependências do projeto para evitar conflitos.
+
+**No Windows (PowerShell):**
 
 ```bash
-# Crie o ambiente virtual
 python -m venv .venv
-```
-
-### 4\. Ativar o Ambiente Virtual
-
-Você deve ativar o ambiente **toda vez** que for trabalhar no projeto.
-
-**No Windows (PowerShell/CMD):**
-
-```bash
 .\.venv\Scripts\activate
 ```
 
-**No macOS / Linux (Bash/Zsh):**
+**No Linux/Mac:**
 
 ```bash
+python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-(Você saberá que funcionou pois o nome `(.venv)` aparecerá no seu terminal).
+### 3\. Instalar Dependências
 
-### 5\. Instalar as Dependências
-
-Com o ambiente ativo, instale todas as bibliotecas necessárias usando o arquivo `requirements.txt`.
+Instale as bibliotecas Python necessárias (`ollama`, `litellm`, etc.):
 
 ```bash
-# Garante que o pip (gerenciador de pacotes) está atualizado
-pip install --upgrade pip
-
-# Instala todas as bibliotecas do projeto
 pip install -r requirements.txt
 ```
 
-### 6\. Pronto\!
+### 4\. Baixar os Modelos de IA (Ollama)
 
-Seu ambiente está configurado. As bibliotecas instaladas incluem:
+Este projeto compara diferentes modelos. Execute os comandos abaixo no terminal para baixar os "cérebros" das IAs para sua máquina:
 
-  * `torch` e `transformers` (para carregar os LLMs)
-  * `langchain` e `llama-index` (para implementar o RAG)
-  * `faiss-cpu` e `chromadb` (bancos vetoriais para o RAG)
-  * `pandas` (para manipulação de dados)
-  * `jupyter` (para notebooks de experimentação)
+```bash
+# Modelo leve (3B) - Para testes rápidos
+ollama pull llama3.2
+
+# Modelos robustos (7B/8B) - Para o benchmark comparativo
+ollama pull llama3.1
+ollama pull mistral
+ollama pull qwen2.5
+```
+
+-----
+
+## 📂 Estrutura do Projeto
+
+  * **`dados/`**: Contém os arquivos de log brutos (`log1.json`, `log2.json`) simulando eventos de segurança (ex: detecção de PowerShell malicioso).
+  * **`gerar_playbook.py`**: Script para teste rápido. Gera um único playbook no terminal usando o modelo mais leve (`llama3.2`).
+  * **`comparar_modelos.py`**: Script de pesquisa. Executa uma bateria de testes com 3 modelos diferentes (`llama3.1`, `mistral`, `qwen2.5`), cronometra o tempo e salva os resultados em arquivos de texto.
+
+-----
+
+## 🧪 Como Rodar os Testes
+
+Certifique-se de que o aplicativo **Ollama** está aberto e rodando perto do relógio do sistema.
+
+### Teste 1: Validação Rápida (Terminal)
+
+Para ver se o sistema está funcionando e gerar um playbook instantâneo na tela:
+
+```bash
+python gerar_playbook.py
+```
+
+*Modelo usado:* Llama 3.2 (3B)
+
+### Teste 2: Benchmark Comparativo (Pesquisa)
+
+Para rodar a comparação entre Llama 3.1, Mistral e Qwen. Este processo pode levar alguns minutos dependendo do hardware.
+
+```bash
+python comparar_modelos.py
+```
+
+**Saída esperada:**
+O script criará arquivos `.txt` na pasta raiz com o nome de cada modelo (ex: `resultado_mistral.txt`), contendo:
+
+  * O tempo total de execução.
+  * O Playbook gerado pelo modelo.
+
+-----
+
+## 📊 Resultados Preliminares (Notebook)
+
+Testes realizados em ambiente de Notebook (CPU):
+
+| Modelo | Parâmetros | Tempo Médio | Observação |
+| :--- | :--- | :--- | :--- |
+| **Llama 3.2** | 3B | \~2.5 min | Rápido, ideal para dev. |
+| **Qwen 2.5** | 7B | \~6.1 min | Melhor performance entre os 7B. |
+| **Mistral** | 7B | \~6.2 min | Respostas consistentes. |
+| **Llama 3.1** | 8B | \~6.2 min | Padrão de mercado. |
+
+-----
+
+## 🤝 Colaboradores
+
+  * [Seu Nome] - Bolsista de Iniciação Científica
+  * Prof. Hugo - Orientador
 
 <!-- end list -->
 

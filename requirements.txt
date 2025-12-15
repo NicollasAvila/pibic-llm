@@ -17,3 +17,6 @@ pandas
 
 # Para experimentação em Notebooks
 jupyter
+
+ollama
+litellm
