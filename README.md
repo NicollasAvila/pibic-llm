@@ -118,10 +118,7 @@ Testes realizados em ambiente de Notebook (CPU):
 
 -----
 
-## 🤝 Colaboradores
 
-  * [Seu Nome] - Bolsista de Iniciação Científica
-  * Prof. Hugo - Orientador
 
 <!-- end list -->
 
