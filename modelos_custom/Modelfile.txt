@@ -1,0 +1,1 @@
+FROM ./llama-3-8b-instruct-cybersecurity.Q4_K_M.gguf

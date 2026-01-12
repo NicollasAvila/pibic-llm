@@ -1,39 +1,38 @@
 MODELO: ollama/llama3.1
-TEMPO: 375.59s
+TEMPO: 102.68s
 ----------------------------------------
 **IDENTIFICAÇÃO**
-Resumo do incidente:
-Incidente de Uso de API Ilegal identificado no sistema por meio da regra "Trellix - Uso de API ilegal" (ID 100601). O ataque ocorreu em dois momentos, indicando possível execução contínua.
+
+* **Resumo do Incidente:** Ocorrência de uso de API ilegal no sistema, detectada pela regra "Trellix - Uso de API ilegal" (ID: 100601).
+* **Data e Hora:** 10/12/2025 às 16h04m49s.
+* **Sistema Afetado:** SRVEPO (Windows Server 2012).
 
 **ETAPAS DO ATAQUE**
 
-1.  **Passo 1: Identificação do Acesso não Autorizado**
-    *   O sistema detectou o uso de API ilegal relacionado a comandos PowerShell por meio da regra Trellix - Uso de API ilegal (ID 100601).
-2.  **Passo 2: Compreensão da Origem do Ataque**
-    *   O ataque foi identificado na máquina "SRVEPO", que está executando o Windows Server 2012 e possui a instância do Trellix Endpoint Security.
-3.  **Passo 3: Ações Executadas pelo Atacante**
-    *   O sistema detectou o uso de comandos PowerShell ilegais, indicando atividade suspeita relacionada ao sistema operacional.
+1. **Passo 1:** O sistema detectou a tentativa de uso de API ilegal através da regra "Trellix - Uso de API ilegal" (ID: 100601).
+2. **Passo 2:** A regra foi disparada duas vezes em rápida sequência, indicando uma atividade suspeita.
+3. **Passo 3:** O agente detectou que a atividade suspeita ocorreu no processo "POWERSHELL.EXE" com o usuário "SYSTEM".
 
 **AVALIAÇÃO**
 
-*   **Indicadores de Impacto (IoCs):**
-    *   Máquina afetada: SRVEPO
-    *   Sistema Operacional: Windows Server 2012
-    *   IP associado: 177.74.1.190
-    *   Comando ilegal utilizado: Powershell EXE
-*   **Indicadores de Compromisso (IoCs):**
-    *   Nenhum IoC foi encontrado, pois o sistema operacional não está comprometido.
-*   **Hashes de Malware:**
-    *   Não há hashes fornecidos para análise.
+* **IoCs (Indicators of Compromise):**
+ + IP: 177.74.1.190
+ + Processo: POWERSHELL.EXE
+ + Usuário: SYSTEM
+* **Hashes:** Não disponíveis.
+* **Notas de Segurança:** A atividade suspeita pode ser indicativa de um ataque cibernético.
 
 **MITIGAÇÃO**
 
-1.  **Passo 1: Verificar se a instância do Trellix Endpoint Security está atualizada.**
-2.  **Passo 2: Verificar se as regras de segurança estão configuradas corretamente para bloquear o acesso não autorizado.**
-3.  **Passo 3: Executar um scan completo no sistema para detectar possíveis malware ou atividades suspeitas.**
+* **Ações Preventivas:**
+ + Verificar se o sistema está atualizado e com as patchs mais recentes.
+ + Revisar as configurações de segurança do processo "POWERSHELL.EXE".
+ + Monitorar a atividade de rede e de processo para detectar outros possíveis ataques.
 
 **CONTENÇÃO**
 
-1.  **Passo 1: Isolar a máquina SRVEPO do ambiente até que as causas da violação sejam determinadas e resolvidas.**
-2.  **Passo 2: Verificar e desabilitar todos os processos relacionados ao PowerShell EXE em execução na máquina SRVEPO.**
-3.  **Passo 3: Realizar um backup completo do sistema operacional para análise posterior.**
+* **Ações Imediatas:**
+ + Isolar o sistema SRVEPO da rede.
+ + Executar um análise de malware no sistema.
+ + Reverter as alterações feitas pelo processo "POWERSHELL.EXE" se possível.
+ + Documentar todas as ações tomadas durante a resposta ao incidente.

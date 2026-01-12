@@ -1,33 +1,57 @@
 MODELO: ollama/qwen2.5
-TEMPO: 367.52s
+TEMPO: 164.22s
 ----------------------------------------
-### IDENTIFICAÇÃO
-**Resumo do Incidente:** O evento indica um uso ilegal de uma API no sistema, identificado pelo Trellix Endpoint Security. A atividade foi monitorada em dois relatórios com o mesmo motivo, sugerindo que a tentativa ou uso da API ilegal ocorreu duas vezes.
+### IDENTIFICAÇÃO (Resumo do incidente)
+Um uso ilegal de uma API foi detectado pelo Trellix Endpoint Security na máquina SRVEPO, com o IP associado 177.74.1.190, executando um processo PowerShell. A atividade foi detetada duas vezes pela regra "Trellix - Uso de API ilegal" e está relacionada ao uso do comando `AtlComPtrAssign` no contexto do PowerShell.
 
-### ETAPAS DO ATAQUE
-1. **Detecção Inicial**: O sistema de segurança detectou a utilização de uma API não autorizada.
-2. **Concretização do Ataque**: O Sistema Operacional Windows Server 2012, especificamente o processo `POWERSHELL.EXE`, tentou executar um comando que viola as regras de segurança definidas pelo sistema.
-3. **Detecção Reiterada**: A atividade foi detectada novamente, indicando uma tentativa persistente ou repetição do ataque.
+### ETAPAS DO ATAQUE (Passo a passo técnico)
+1. **Identificação da API**: O atacante ou o código malicioso usou uma API específica chamada `AtlComPtrAssign`.
+2. **Execução de Comando PowerShell**: Este comando foi executado dentro do PowerShell, provavelmente em um ambiente onde o perfil do usuário (NoProfile) estava desativado.
+3. **Detectação pelo Sistema de Detecção de Intrusões (IDS)**: O Trellix Endpoint Security detectou e registrou a atividade suspeita como uma violação das políticas de uso da API.
 
-### AVALIAÇÃO
-- **Indicators of Compromise (IoCs)**: 
-  - APIName = `AtlComPtrAssign`
-  - TargetPath = `C:\WINDOWS\SYSTEM32\WINDOWSPOWERSHELL\V1.0`
-  - TargetProcessName = `POWERSHELL.EXE`
-  
-- **IPs**: 177.74.1.190 (endereço IP envolvido na atividade suspeita)
-- **Hashes**: Não há hashes específicas mencionadas nos logs, mas a análise pode ser realizada com base no comportamento da API `AtlComPtrAssign` e no caminho do arquivo `POWERSHELL.EXE`.
+### AVALIAÇÃO (IoCs, IPs, Hashes)
+- **IP Associado**: 177.74.1.190
+- **ThreatName**: `ExP:Illegal API Use`
+- **TargetProcessName**: `POWERSHELL.EXE`
+- **AnalyzerRuleName**: `Powershell Command Restriction - NoProfile`
 
-### MITIGAÇÃO
-1. **Verificação de Autorização**: Verifique se o uso da API `AtlComPtrAssign` foi autorizado em todos os scripts ou processos que estão sendo executados.
-2. **Atualização do Software**: Confirme a versão atualizada do Trellix Endpoint Security e das atualizações mais recentes para garantir que as regras de detecção sejam atualizadas conforme necessário.
-3. **Análise do PowerShell**: Examine os logs do PowerShell em busca de comandos ou atividades suspeitas, utilizando ferramentas como o `Get-EventLog` e `Get-History`.
-4. **Revisão de Permissões**: Verifique as permissões dos usuários no sistema para garantir que nenhuma conta não autorizada tenha acesso ao uso ilegal da API.
-5. **Implementação de Regras Adicionais**: Crie regras adicionalmente em sistemas como McAfee EPO e Palo Alto Networks para monitorar futuras atividades suspeitas.
+### MITIGAÇÃO (Ações preventivas)
+1. **Verificação do PowerShell Executável**:
+   - Verifique se o arquivo `C:\WINDOWS\SYSTEM32\WINDOWSPOWERSHELL\V1.0` e os arquivos relacionados são originais.
+   
+2. **Auditoria dos Comandos de PowerShell**:
+   - Ative a auditoria dos comandos do PowerShell para monitorar quaisquer execuções futuras que possam ser semelhantes ou suspeitas.
 
-### CONTENÇÃO
-1. **Bloqueio do IP Infrator**: Implemente um bloqueio temporário ou permanente no firewall ou sistema de controle de acesso a IP (ACL) para impedir que o endereço IP 177.74.1.190 acesse a rede.
-2. **Isolamento da Máquina**: Isole temporariamente a máquina `SRVEPO` do restante da rede para evitar propagação do incidente.
-3. **Atualização dos Agentes de Segurança**: Verifique e atualize os agentes de segurança em todas as máquinas afetadas, garantindo que estejam com as últimas atualizações e regras de detecção.
+3. **Conceitos de Perfil PowerShell (NoProfile)**:
+   - Configure o perfil do PowerShell (`$PROFILE`) para evitar execuções anônimas e controle a autenticação necessária.
+   
+4. **Revisão de Regras de Segurança**:
+   - Revise as regras de segurança que estão em vigor, garantindo que elas sejam adequadas e seguras.
 
-Este playbook pode ser aprimorado conforme mais informações forem coletadas. A recomendação é realizar uma análise detalhada do comportamento da API `AtlComPtrAssign` e verificar se ela está sendo utilizada indevidamente ou se há algum malware relacionado ao uso dela.
+5. **Atualizações do Sistema e Software**:
+   - Verifique se há atualizações disponíveis para o sistema operacional Windows Server 2012 e qualquer software relacionado.
+   
+6. **Monitoramento de API’s**:
+   - Monitore o uso das APIs existentes, especialmente aquelas com permissões elevadas.
+
+### CONTENÇÃO (Ações imediatas)
+1. **Bloqueio do IP Suspeito**: 
+   - Bloqueie o IP 177.74.1.190 nas firewall interna e externa.
+   
+2. **Isolamento da Máquina**:
+   - Isole a máquina SRVEPO imediatamente para evitar que qualquer impacto adicional ocorra.
+
+3. **Análise Forense**:
+   - Realize uma análise forense nos logs e registros locais e do sistema de gerenciamento (SRVEPO) para identificar se há outras atividades suspeitas.
+
+4. **Notificação de Outros Serviços Afectados**:
+   - Informe a equipe de segurança e operações sobre o incidente para uma avaliação mais ampla da exposição potencial.
+   
+5. **Implementação de Soluções Antivírus Atualizadas**:
+   - Verifique se há software antivírus ou solução EDR atualizados que possam identificar e bloquear atividades similares no futuro.
+
+6. **Ajustes nas Políticas de API Uso**:
+   - Revise e ajuste as políticas de uso de APIs para evitar futuras violações semelhantes, implementando medidas mais rigorosas se necessário.
+
+### Conclusão
+Este incidente demonstra que uma atividade anômala foi detectada no uso de uma API no ambiente de Windows Server 2012. As ações mitigadoras e contenciosas devem ser tomadas imediatamente para proteger o sistema e prevenir futuras vulnerabilidades.

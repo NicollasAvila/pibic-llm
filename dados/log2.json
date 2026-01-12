@@ -1,37 +1,38 @@
 {
-    "timestamp": "2025-12-10T16:04:49.801+0000",
-    "rule": {
-        "level": 7,
-        "description": "Trellix - Uso de API ilegal",
-        "id": "100601",
-        "firedtimes": 2,
-        "mail": false,
-        "groups": [
-            "mcafee_epo",
-            "paloalto"
-        ]
+  "timestamp": "2025-12-10T16:04:49.801+0000",
+  "rule": {
+    "level": 7,
+    "description": "Trellix - Uso de API ilegal",
+    "id": "100601",
+    "firedtimes": 2,
+    "mail": false,
+    "groups": [
+      "mcafee_epo",
+      "paloalto"
+    ]
+  },
+  "agent": {
+    "id": "000",
+    "name": "poc-coleta-log"
+  },
+  "manager": {
+    "name": "poc-coleta-log"
+  },
+  "id": "1765382689.306226694",
+  "data": {
+    "machine_name": "SRVEPO",
+    "ip": {
+      "address": "177.74.1.190"
     },
-    "agent": {
-        "id": "000",
-        "name": "poc-coleta-log"
+    "os": {
+      "name": "Windows Server 2012"
     },
-    "manager": {
-        "name": "poc-coleta-log"
-    },
-    "id": "1765382689.306226694",
-    "data": {
-        "machine_name": "SRVEPO",
-        "ip": {
-            "address": "177.74.1.190"
-        },
-        "os": {
-            "name": "Windows Server 2012"
-        },
-        "username": "SYSTEM",
-        "product_name": "Trellix Endpoint Security",
-        "AnalyzerRuleName": "Powershell Command Restriction - NoProfile",
-        "TargetName": "POWERSHELL.EXE",
-        "TargetProcessName": "POWERSHELL.EXE",
-        "NaturalLangDescription": "IDS_NATURAL_LANG_DESC_DETECTION_BOP_2N|APIName=AtlComPtrAssign|TargetPath=C:\\WINDOWS\\SYSTEM32\\WINDOWSPOWERSHELL\\V1.0|TargetProcessName=POWERSHELL.EXE|ThreatName=ExP:Illegal API Use"
-    }
+    "username": "SYSTEM",
+    "product_name": "Trellix Endpoint Security",
+    "AnalyzerRuleName": "Powershell Command Restriction - NoProfile",
+    "TargetName": "POWERSHELL.EXE",
+    "TargetProcessName": "POWERSHELL.EXE",
+    "TargetHash": "2d1f6f8a32f88f3d0726ade0373f0317",
+    "NaturalLangDescription": "Detectado hash suspeito 2d1f6f8a no processo Powershell."
+  }
 }

@@ -1,17 +1,30 @@
 MODELO: ollama/mistral
-TEMPO: 374.92s
+TEMPO: 141.10s
 ----------------------------------------
- ### Incidente ID 1 - Ataque ao uso ilegal de API no PowerShell
+ ### IDENTIFICAÇÃO (Resumo do incidente)
+Incidente de uso suspeito da API em uma máquina Windows Server 2012 com o nome SRVEPO, detectado pelo sistema Trellix Endpoint Security. O comportamento suspeito envolve a execução de comandos Powershell que possivelmente utilizam APIs ilegais.
 
-- ETAPAS DO ATAQUE (Passo a passo técnico):
-  - O sistema detectou uma atividade suspeita na máquina "SRVEPO" com o nome do usuário "SYSTEM", executando um processo do "PowerShell.exe".
-  - A atividade envolve o uso de uma API proibida pelo software "Trellix Endpoint Security" (módulo AtlComPtrAssign).
-- AVALIAÇÃO (IoCs, IPs, Hashes):
-  - Máquina: SRVEPO, IP: 177.74.1.190, Sistema Operacional: Windows Server 2012, Software: Trellix Endpoint Security
-  - Analisador de Regra: Powershell Command Restriction - NoProfile, IDS_NATURAL_LANG_DESC_DETECTION_BOP_2N
-- MITIGAÇÃO (Ações preventivas):
-  - Ajuste a política de segurança para bloquear o uso de APIs proibidas pelo "Trellix Endpoint Security".
-  - Realize uma análise mais detalhada do código que usou a API proibida.
-- CONTENÇÃO (Ações imediatas):
-  - Bloqueie o processo PowerShell no momento atual e monitore a máquina para detectar outras atividades suspeitas.
-  - Notifique o time de operações de segurança sobre os eventos detetados.
+### ETAPAS DO ATAQUE (Passo a passo técnico)
+1. Detectado incidente de uso de API ilegal (ID: 100601) pelo sistema Trellix Endpoint Security.
+2. Ocorrência repetida do incidente (firedtimes: 2).
+3. Comandos suspeitos relacionados a Powershell foram detectados na máquina SRVEPO.
+4. A API suspeita é AtlComPtrAssign e a chamada desta API foi feita no caminho C:\WINDOWS\SYSTEM32\WINDOWSPOWERSHELL\V1.0.
+
+### AVALIAÇÃO (IoCs, IPs, Hashes)
+- Máquina: SRVEPO
+- Sistema Operacional: Windows Server 2012
+- API suspeita: AtlComPtrAssign
+- Caminho do arquivo executado: C:\WINDOWS\SYSTEM32\WINDOWSPOWERSHELL\V1.0
+- TargetProcessName: POWERSHELL.EXE
+- Análise linguística: IDS_NATURAL_LANG_DESC_DETECTION_BOP_2N|APIName=AtlComPtrAssign|TargetPath=C:\WINDOWS\SYSTEM32\WINDOWSPOWERSHELL\V1.0|TargetProcessName=POWERSHELL.EXE|ThreatName=ExP:Illegal API Use
+
+### MITIGAÇÃO (Ações preventivas)
+1. Aplicar atualizações de segurança na máquina SRVEPO.
+2. Implementar políticas de segurança mais estritas para a execução de comandos Powershell, particularmente quando utilizam APIs suspeitas.
+3. Realizar uma auditoria detalhada das APIs instaladas na máquina SRVEPO para remoção ou restringir as que são inseguras.
+
+### CONTENÇÃO (Ações imediatas)
+1. Monitorar ativamente a máquina SRVEPO e analisar logs adicionais.
+2. Determinar se há outras máquinas infectadas no mesmo ambiente de rede com o mesmo comportamento suspeito.
+3. Bloquear a API AtlComPtrAssign ou bloqueie as chamadas à API para evitar a continuação do incidente.
+4. Avisar ao time de operações sobre as medidas tomadas e a necessidade de monitoramento adicional da máquina SRVEPO.
