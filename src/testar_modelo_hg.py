@@ -2,7 +2,7 @@ import ollama
 import json
 import time
 import os
-from config import PROMPT_PADRAO, MODELO_FAVORITO
+from src.config import PROMPT_PADRAO, MODELO_FAVORITO
 
 # --- CONFIGURAÇÕES ---
 # Usa o modelo definido no arquivo de configuração
