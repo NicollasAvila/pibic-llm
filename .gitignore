@@ -1,2 +1,24 @@
-# Ignorar modelos grandes de IA
+# --- Segurança (Obrigatório) ---
+.env
+.env.local
+
+# --- Modelos Pesados (Não subir arquivos de GBs) ---
 *.gguf
+*.bin
+modelos/
+
+# --- Python (Arquivos temporários compilados) ---
+__pycache__/
+*.py[cod]
+
+# --- Ambiente Virtual (NUNCA suba isso, é pesadíssimo) ---
+.venv/
+venv/
+env/
+
+# --- VS Code (Configurações locais do seu editor) ---
+.vscode/
+
+# --- Dados (Se quiser evitar subir os logs de teste) ---
+dados/dataset_sintetico.json
+resultados/*.csv

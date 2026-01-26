@@ -1,126 +1,151 @@
 
-````markdown
-# Benchmarking de SLMs para Resposta a Incidentes (PIBIC)
+```markdown
+# Llama-Cyber: Automação de Análise de Logs de Segurança (SOC)
 
-Este repositório contém os scripts e dados utilizados na pesquisa de Iniciação Científica (UEPA) sobre o uso de **Small Language Models (SLMs)** locais para a geração automática de Playbooks de Resposta a Incidentes de Cibersegurança.
+**Projeto de Pesquisa (PIBIC):** Avaliação de Small Language Models (SLMs) para Resposta a Incidentes em Ambientes Isolados.
 
-O objetivo é validar a capacidade de modelos leves (rodando em CPU/Notebooks) de interpretar logs de segurança (JSON) e gerar planos de ação técnicos.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![AI Status](https://img.shields.io/badge/Status-Em_Desenvolvimento-green)
 
-## 📋 Pré-requisitos
+## Sobre o Projeto
 
-Para rodar este projeto, você precisará de:
+Este projeto visa desenvolver e validar um pipeline de Inteligência Artificial capaz de atuar como um **Analista de SOC Nível 1**. O foco principal é a utilização de modelos de linguagem menores (SLMs) rodando localmente para garantir a privacidade dos dados, analisando logs complexos de segurança (padrão SIEM Wazuh) e gerando relatórios de incidentes.
 
-1.  **Python 3.10+** instalado.
-2.  **[Ollama](https://ollama.com/)** instalado e rodando em segundo plano (essencial para gerenciar os modelos).
-3.  **Git** para clonar o repositório.
+Para aferir a qualidade e a confiabilidade do modelo, utiliza-se a metodologia **LLM-as-a-Judge**, onde um modelo de grande porte (Llama-3-70B via Groq) atua como auditor, avaliando automaticamente a precisão técnica das respostas geradas pelo modelo local em comparação com o cenário real (Ground Truth).
 
-## 🚀 Instalação e Configuração
+## Metodologia e Fluxo de Trabalho
 
-Siga os passos abaixo para preparar o ambiente de desenvolvimento.
+O pipeline automatizado consiste em três etapas sequenciais:
 
-### 1. Clonar o Repositório
+1.  **Geração de Dados Sintéticos (Data Factory)**
+    * Responsável pela criação de logs sintéticos de alta fidelidade que simulam a estrutura aninhada do **Wazuh SIEM**.
+    * Cobre cenários de ataque variados, como Ransomware, SQL Injection e Brute Force.
+    * Modelo utilizado: `Llama-3.1-8B` (Base).
 
+2.  **Inferência Local (O Analista)**
+    * O modelo especialista processa o log bruto JSON.
+    * Extrai Indicadores de Comprometimento (IoCs), classifica a ameaça e sugere ações de mitigação.
+    * Modelo utilizado: `Llama-3-Cyber` (Fine-tuned/Local via Ollama).
+
+3.  **Avaliação Automatizada (O Juiz)**
+    * Compara a análise gerada pelo modelo local contra o gabarito do cenário original.
+    * Atribui uma nota técnica (0-10) baseada em critérios de precisão, exatidão de IoC e formatação.
+    * Modelo utilizado: `Llama-3.3-70B` (Via Groq API).
+
+## Estrutura do Repositório
+
+```text
+├── dados/              # Armazena os datasets gerados (logs sintéticos)
+├── resultados/         # Relatórios CSV com as notas e métricas da avaliação
+├── src/                # Código fonte
+│   ├── agente_juiz.py  # Script principal de avaliação (LLM-as-a-Judge)
+│   └── gerar_dataset.py # Script gerador de logs Wazuh simulados
+├── .env.example        # Modelo de variáveis de ambiente
+├── .gitignore          # Arquivos ignorados pelo Git
+├── README.md           # Documentação do projeto
+└── requirements.txt    # Dependências do Python
+
+```
+
+## Instalação e Configuração
+
+### Pré-requisitos
+
+* Python 3.10 ou superior.
+* [Ollama](https://ollama.com/) instalado e em execução.
+* Chave de API da [Groq Cloud](https://console.groq.com/).
+
+### Passo a Passo
+
+1. **Clone o repositório:**
 ```bash
-git clone [URL_DO_SEU_REPOSITORIO]
-cd [NOME_DA_PASTA]
-````
+git clone [https://github.com/seu-usuario/seu-repo.git](https://github.com/seu-usuario/seu-repo.git)
+cd seu-repo
 
-### 2\. Criar e Ativar o Ambiente Virtual
+```
 
-Isolamos as dependências do projeto para evitar conflitos.
 
-**No Windows (PowerShell):**
-
+2. **Configuração do Ambiente Virtual:**
 ```bash
 python -m venv .venv
+# Windows:
 .\.venv\Scripts\activate
-```
-
-**No Linux/Mac:**
-
-```bash
-python3 -m venv .venv
+# Linux/Mac:
 source .venv/bin/activate
+
 ```
 
-### 3\. Instalar Dependências
 
-Instale as bibliotecas Python necessárias (`ollama`, `litellm`, etc.):
+3. **Instalação de Dependências:**
+Crie um arquivo `requirements.txt` com o conteúdo abaixo e execute a instalação:
+```text
+ollama
+groq
+pandas
+python-dotenv
 
+```
+
+
+Comando de instalação:
 ```bash
 pip install -r requirements.txt
+
 ```
 
-### 4\. Baixar os Modelos de IA (Ollama)
 
-Este projeto compara diferentes modelos. Execute os comandos abaixo no terminal para baixar os "cérebros" das IAs para sua máquina:
+4. **Variáveis de Ambiente:**
+Renomeie o arquivo `.env.example` para `.env` e adicione sua chave:
+```env
+GROQ_API_KEY=gsk_sua_chave_aqui
 
+```
+
+
+5. **Modelos:**
+Certifique-se de baixar o modelo base no Ollama:
 ```bash
-# Modelo leve (3B) - Para testes rápidos
-ollama pull llama3.2
-
-# Modelos robustos (7B/8B) - Para o benchmark comparativo
 ollama pull llama3.1
-ollama pull mistral
-ollama pull qwen2.5
+
 ```
 
------
 
-## 📂 Estrutura do Projeto
 
-  * **`dados/`**: Contém os arquivos de log brutos (`log1.json`, `log2.json`) simulando eventos de segurança (ex: detecção de PowerShell malicioso).
-  * **`gerar_playbook.py`**: Script para teste rápido. Gera um único playbook no terminal usando o modelo mais leve (`llama3.2`).
-  * **`comparar_modelos.py`**: Script de pesquisa. Executa uma bateria de testes com 3 modelos diferentes (`llama3.1`, `mistral`, `qwen2.5`), cronometra o tempo e salva os resultados em arquivos de texto.
+## Utilização
 
------
+### 1. Gerar Novos Dados de Teste
 
-## 🧪 Como Rodar os Testes
-
-Certifique-se de que o aplicativo **Ollama** está aberto e rodando perto do relógio do sistema.
-
-### Teste 1: Validação Rápida (Terminal)
-
-Para ver se o sistema está funcionando e gerar um playbook instantâneo na tela:
+Para criar um novo lote de logs simulados baseados em cenários de cibersegurança:
 
 ```bash
-python gerar_playbook.py
+python src/gerar_dataset.py
+
 ```
 
-*Modelo usado:* Llama 3.2 (3B)
+*Resultado:* Criação/Atualização do arquivo `dados/dataset_sintetico.json`.
 
-### Teste 2: Benchmark Comparativo (Pesquisa)
+### 2. Executar a Avaliação
 
-Para rodar a comparação entre Llama 3.1, Mistral e Qwen. Este processo pode levar alguns minutos dependendo do hardware.
+Para submeter o modelo local aos testes automatizados e obter o relatório de performance:
 
 ```bash
-python comparar_modelos.py
-```
-
-**Saída esperada:**
-O script criará arquivos `.txt` na pasta raiz com o nome de cada modelo (ex: `resultado_mistral.txt`), contendo:
-
-  * O tempo total de execução.
-  * O Playbook gerado pelo modelo.
-
------
-
-## 📊 Resultados Preliminares (Notebook)
-
-Testes realizados em ambiente de Notebook (CPU):
-
-| Modelo | Parâmetros | Tempo Médio | Observação |
-| :--- | :--- | :--- | :--- |
-| **Llama 3.2** | 3B | \~2.5 min | Rápido, ideal para dev. |
-| **Qwen 2.5** | 7B | \~6.1 min | Melhor performance entre os 7B. |
-| **Mistral** | 7B | \~6.2 min | Respostas consistentes. |
-| **Llama 3.1** | 8B | \~6.2 min | Padrão de mercado. |
-
------
-
-
-
-<!-- end list -->
+python src/agente_juiz.py
 
 ```
+
+*Resultado:* Exibição das notas no terminal e geração do relatório detalhado em `resultados/relatorio_juiz.csv`.
+
+## Segurança
+
+Este projeto segue práticas de desenvolvimento seguro:
+
+* Utilização de ambientes virtuais isolados.
+* Os logs processados são inteiramente sintéticos, garantindo que nenhum dado sensível real seja exposto ou processado em nuvem.
+
+---
+
+**Instituição:** UEPA
+
+```
+
 ```
