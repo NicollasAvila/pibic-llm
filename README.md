@@ -85,7 +85,19 @@ pandas
 python-dotenv
 
 ```
+Configuração do Modelo Customizado (Importante!)
+O modelo fine-tuned (.gguf) é grande e não está incluído no repositório Git. Você deve baixá-lo separadamente.
 
+Baixe o Modelo: Faça o download do arquivo llama-3-8b-instruct-cybersecurity.Q4_K_M.gguf (https://huggingface.co/cowWhySo/Llama-3-8B-Instruct-Cybersecurity-gguf/tree/main)
+
+Organize a Pasta: Mova o arquivo baixado para dentro da pasta modelos_custom/ do projeto.
+
+Registre o Modelo no Ollama: Execute os comandos abaixo para criar o agente local:
+
+Bash
+cd modelos_custom
+ollama create llama3-cyber -f Modelfile.txt
+cd ..
 
 Comando de instalação:
 ```bash

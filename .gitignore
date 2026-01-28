@@ -1,24 +1,32 @@
-# --- Segurança (Obrigatório) ---
+# --- SISTEMA & PYTHON (Padrão) ---
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+
+# --- SEGURANÇA (Crítico) ---
 .env
 .env.local
 
-# --- Modelos Pesados (Não subir arquivos de GBs) ---
-*.gguf
-*.bin
-modelos/
-
-# --- Python (Arquivos temporários compilados) ---
-__pycache__/
-*.py[cod]
-
-# --- Ambiente Virtual (NUNCA suba isso, é pesadíssimo) ---
+# --- AMBIENTE VIRTUAL ---
 .venv/
 venv/
 env/
 
-# --- VS Code (Configurações locais do seu editor) ---
+# --- IDE ---
 .vscode/
 
-# --- Dados (Se quiser evitar subir os logs de teste) ---
-dados/dataset_sintetico.json
+# --- MODELOS (Pesados) ---
+*.gguf
+*.bin
+
+# --- DADOS (Onde moram os 2GB) ---
+# Ignora qualquer log dentro da pasta dados
+dados/*.log
+dados/*.json
+dados/*.txt
+
+# EXCEÇÃO: Permite subir o arquivo de amostra (se você criou o sample.log)
+!dados/sample.log
+
 resultados/*.csv
