@@ -1,49 +1,55 @@
-
 ```markdown
-# Llama-Cyber: Automação de Análise de Logs de Segurança (SOC)
+# Llama-Cyber: Arquitetura Híbrida de Resposta a Incidentes (Edge Computing)
 
-**Projeto de Pesquisa (PIBIC):** Avaliação de Small Language Models (SLMs) para Resposta a Incidentes em Ambientes Isolados.
+**Projeto de Pesquisa (PIBIC):** Avaliação de Small Language Models (SLMs) para Resposta a Incidentes em Ambientes com Restrição de Hardware (16GB RAM).
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![AI Status](https://img.shields.io/badge/Status-Em_Desenvolvimento-green)
+![Llama.cpp](https://img.shields.io/badge/Engine-llama.cpp-orange)
+![FAISS](https://img.shields.io/badge/VectorDB-FAISS-yellow)
+![Status](https://img.shields.io/badge/Status-Refatoração_Arquitetural-green)
 
 ## Sobre o Projeto
 
-Este projeto visa desenvolver e validar um pipeline de Inteligência Artificial capaz de atuar como um **Analista de SOC Nível 1**. O foco principal é a utilização de modelos de linguagem menores (SLMs) rodando localmente para garantir a privacidade dos dados, analisando logs complexos de segurança (padrão SIEM Wazuh) e gerando relatórios de incidentes.
+Este projeto implementa uma arquitetura de cibersegurança de nível corporativo (SOC Nível 1) desenhada estritamente para operar na borda da rede (**Edge Computing**). O maior desafio resolvido por esta pesquisa é o custo computacional: evitar a "explosão de tokens" e o esgotamento de memória ao analisar milhares de logs por segundo em hardwares de consumo padrão (16GB RAM e GPU AMD RX 6600).
 
-Para aferir a qualidade e a confiabilidade do modelo, utiliza-se a metodologia **LLM-as-a-Judge**, onde um modelo de grande porte (Llama-3-70B via Groq) atua como auditor, avaliando automaticamente a precisão técnica das respostas geradas pelo modelo local em comparação com o cenário real (Ground Truth).
+Para viabilizar isso, o projeto abandona a leitura "força bruta" de logs brutos por IA e adota um **Pipeline Híbrido em 3 Camadas**, unindo triagem determinística (Regex), enriquecimento espaço-temporal (RAG) e inferência neural quantizada em 4-bits.
 
-## Metodologia e Fluxo de Trabalho
+## Arquitetura do Sistema
 
-O pipeline automatizado consiste em três etapas sequenciais:
+O fluxo de dados foi desenhado para garantir latência ultrabaixa e zero alucinação de formato:
 
-1.  **Geração de Dados Sintéticos (Data Factory)**
-    * Responsável pela criação de logs sintéticos de alta fidelidade que simulam a estrutura aninhada do **Wazuh SIEM**.
-    * Cobre cenários de ataque variados, como Ransomware, SQL Injection e Brute Force.
-    * Modelo utilizado: `Llama-3.1-8B` (Base).
+* **Fase 1: Funil de Ingestão e Preparação (Tempo Real)**
+  * **Camada 1 (Triagem Determinística):** Uso de scripts Python com Expressões Regulares (Regex) para filtrar e descartar até 90% do tráfego interno benigno.
+  * **Camada 2 (Tradução Semântica e RAG):** O log bruto restante é condensado em uma sentença de texto curta. O script realiza uma busca ultrarrápida em memória via **FAISS** (Threat Intelligence) e anota o log com *Tags Espaço-Temporais* (ex: `[MADRUGADA] [IP_EXTERNO]`), poupando a IA de processar dados inúteis.
 
-2.  **Inferência Local (O Analista)**
-    * O modelo especialista processa o log bruto JSON.
-    * Extrai Indicadores de Comprometimento (IoCs), classifica a ameaça e sugere ações de mitigação.
-    * Modelo utilizado: `Llama-3-Cyber` (Fine-tuned/Local via Ollama).
+* **Fase 2: Inferência Agêntica (Tempo Real)**
+  * **Camada 3 (SLM Especialista):** Modelos de 1.5B a 3B de parâmetros (ex: Qwen2.5 ou Llama-3.2) quantizados em formato `GGUF` (4-bits). Recebem blocos de logs traduzidos (*Batching*) e executam ferramentas simuladas (*Model Context Protocol - MCP*) para emitir o Playbook de Resposta estruturado em JSON.
 
-3.  **Avaliação Automatizada (O Juiz)**
-    * Compara a análise gerada pelo modelo local contra o gabarito do cenário original.
-    * Atribui uma nota técnica (0-10) baseada em critérios de precisão, exatidão de IoC e formatação.
-    * Modelo utilizado: `Llama-3.3-70B` (Via Groq API).
+* **Fase 3: MLOps e Auditoria (Offline)**
+  * **LLM-as-a-Judge:** Um modelo de 70B (Groq API) atua como auditor cego, avaliando a acurácia semântica do modelo local contra o cenário real (Ground Truth).
+  * **Continuous Training (QLoRA):** Os erros identificados pelo juiz retroalimentam o sistema para ajuste fino do SLM (Diferenciação de Contexto), zerando gradativamente os falsos positivos.
 
 ## Estrutura do Repositório
 
 ```text
-├── dados/              # Armazena os datasets gerados (logs sintéticos)
-├── resultados/         # Relatórios CSV com as notas e métricas da avaliação
-├── src/                # Código fonte
-│   ├── agente_juiz.py  # Script principal de avaliação (LLM-as-a-Judge)
-│   └── gerar_dataset.py # Script gerador de logs Wazuh simulados
-├── .env.example        # Modelo de variáveis de ambiente
-├── .gitignore          # Arquivos ignorados pelo Git
-├── README.md           # Documentação do projeto
-└── requirements.txt    # Dependências do Python
+pibic-llm/
+├── dados/
+│   ├── raw/                  # Logs originais do Firewall/SIEM
+│   └── vector_db/            # Índices do FAISS (Base de Conhecimento RAG)
+├── resultados/               # Relatórios CSV (Métricas de Avaliação do Juiz)
+├── src/
+│   ├── core/                 # Pipeline de Produção (Tempo Real)
+│   │   ├── camada1_triagem.py
+│   │   ├── camada2_tradutor.py
+│   │   └── camada3_agente.py
+│   ├── evaluation/           # Pipeline de Treino e Validação (Offline)
+│   │   ├── juiz_70b.py
+│   │   └── gerar_dataset.py
+│   ├── config.py             # Prompts e Variáveis de Ambiente
+│   └── main_pipeline.py      # Orquestrador das Camadas 1, 2 e 3
+├── .env.example
+├── requirements.txt
+└── README.md
 
 ```
 
@@ -52,112 +58,45 @@ O pipeline automatizado consiste em três etapas sequenciais:
 ### Pré-requisitos
 
 * Python 3.10 ou superior.
-* [Ollama](https://ollama.com/) instalado e em execução.
-* Chave de API da [Groq Cloud](https://console.groq.com/).
+* Chave de API da [Groq Cloud](https://console.groq.com/) (Para o LLM Juiz).
 
 ### Passo a Passo
 
 1. **Clone o repositório:**
+
 ```bash
-git clone [https://github.com/seu-usuario/seu-repo.git](https://github.com/seu-usuario/seu-repo.git)
-cd seu-repo
+git clone [https://github.com/NicollasAvila/pibic-llm.git](https://github.com/NicollasAvila/pibic-llm.git)
+cd pibic-llm
 
 ```
 
+2. **Crie e ative o ambiente virtual:**
 
-2. **Configuração do Ambiente Virtual:**
 ```bash
-python -m venv .venv
+python -m venv venv
 # Windows:
-.\.venv\Scripts\activate
+.\venv\Scripts\activate
 # Linux/Mac:
-source .venv/bin/activate
+source venv/bin/activate
 
 ```
 
+3. **Instale as dependências:**
 
-3. **Instalação de Dependências:**
-Crie um arquivo `requirements.txt` com o conteúdo abaixo e execute a instalação:
-```text
-ollama
-groq
-pandas
-python-dotenv
-
-```
-Configuração do Modelo Customizado (Importante!)
-O modelo fine-tuned (.gguf) é grande e não está incluído no repositório Git. Você deve baixá-lo separadamente.
-
-Baixe o Modelo: Faça o download do arquivo llama-3-8b-instruct-cybersecurity.Q4_K_M.gguf (https://huggingface.co/cowWhySo/Llama-3-8B-Instruct-Cybersecurity-gguf/tree/main)
-
-Organize a Pasta: Mova o arquivo baixado para dentro da pasta modelos_custom/ do projeto.
-
-Registre o Modelo no Ollama: Execute os comandos abaixo para criar o agente local:
-
-Bash
-cd modelos_custom
-ollama create llama3-cyber -f Modelfile.txt
-cd ..
-
-Comando de instalação:
 ```bash
 pip install -r requirements.txt
 
 ```
 
-
 4. **Variáveis de Ambiente:**
-Renomeie o arquivo `.env.example` para `.env` e adicione sua chave:
+Renomeie `.env.example` para `.env` e insira sua chave da Groq:
+
 ```env
-GROQ_API_KEY=gsk_sua_chave_aqui
+GROQ_API_KEY=sua_chave_aqui
 
 ```
 
-
-5. **Modelos:**
-Certifique-se de baixar o modelo base no Ollama:
-```bash
-ollama pull llama3.1
-
-```
-
-
-
-## Utilização
-
-### 1. Gerar Novos Dados de Teste
-
-Para criar um novo lote de logs simulados baseados em cenários de cibersegurança:
-
-```bash
-python src/gerar_dataset.py
-
-```
-
-*Resultado:* Criação/Atualização do arquivo `dados/dataset_sintetico.json`.
-
-### 2. Executar a Avaliação
-
-Para submeter o modelo local aos testes automatizados e obter o relatório de performance:
-
-```bash
-python src/agente_juiz.py
-
-```
-
-*Resultado:* Exibição das notas no terminal e geração do relatório detalhado em `resultados/relatorio_juiz.csv`.
-
-## Segurança
-
-Este projeto segue práticas de desenvolvimento seguro:
-
-* Utilização de ambientes virtuais isolados.
-* Os logs processados são inteiramente sintéticos, garantindo que nenhum dado sensível real seja exposto ou processado em nuvem.
+5. **Download do Modelo Quantizado:**
+Para rodar a Camada 3 localmente com alta velocidade, baixe o modelo em formato `GGUF`e aloque-o na pasta raiz ou configure o caminho no arquivo `src/config.py`.
 
 ---
-
-**Instituição:** UEPA
-
-```
-
-```

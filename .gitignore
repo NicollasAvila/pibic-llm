@@ -19,14 +19,27 @@ env/
 # --- MODELOS (Pesados) ---
 *.gguf
 *.bin
+# Ignora tudo na pasta modelos, exceto o arquivo .gitkeep
+modelos/*
+!modelos/.gitkeep
 
-# --- DADOS (Onde moram os 2GB) ---
-# Ignora qualquer log dentro da pasta dados
-dados/*.log
-dados/*.json
-dados/*.txt
+# --- DADOS & RAG (Onde moram os gigabytes) ---
+# Ignora TODOS os arquivos de log globalmente para evitar acidentes
+*.log
 
-# EXCEÇÃO: Permite subir o arquivo de amostra (se você criou o sample.log)
-!dados/sample.log
+# Ignora tudo na pasta raw (e dados/raw), mantendo apenas o .gitkeep
+dados/raw/*
+!dados/raw/.gitkeep
+raw/*
+!raw/.gitkeep
+!raw/dataset_sintetico.json
 
-resultados/*.csv
+# Ignora os bancos de dados vetoriais gerados localmente
+dados/vector_db/*
+!dados/vector_db/.gitkeep
+*.index
+
+# --- RESULTADOS ---
+# Ignora os relatórios gerados, mantém a pasta
+resultados/*
+!resultados/.gitkeep

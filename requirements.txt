@@ -1,4 +1,8 @@
 ollama
+llama-cpp-python
 groq
+faiss-cpu
+sentence-transformers
 pandas
+pydantic
 python-dotenv

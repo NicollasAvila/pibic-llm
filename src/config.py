@@ -1,58 +1,44 @@
-# config.py
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-# Prompt Otimizado: Estrutura Profissional + Extração de IoCs
-PROMPT_PADRAO = """
-Você é um assistente Sênior de SOC/DFIR (Digital Forensics and Incident Response).
-Sua tarefa é analisar logs de segurança brutos e gerar um Playbook Operacional.
+load_dotenv()
 
-<rules>
-1. LOG-ONLY (REGRA DE OURO): Use SOMENTE dados contidos explicitamente no log.
-   - Proibido inventar ou enriquecer com dados externos não citados.
-   - Se um campo solicitado não existir no log, escreva ESTRITAMENTE: "Não encontrado no log".
+# --- MAPEAMENTO DE PASTAS ---
+BASE_DIR = Path(__file__).resolve().parent.parent
+DADOS_RAW_DIR = BASE_DIR / "dados" / "raw"
+VECTOR_DB_DIR = BASE_DIR / "dados" / "vector_db"
+MODELOS_DIR = BASE_DIR / "modelos"
+RESULTADOS_DIR = BASE_DIR / "resultados"
 
-2. EXTRAÇÃO DE EVIDÊNCIAS (CRÍTICO):
-   - Procure ativamente por IoCs (Indicadores de Comprometimento).
-   - VERIFIQUE TODOS OS CAMPOS DO JSON, especialmente chaves como 'TargetHash', 'MD5', 'SHA256', 'hash', 'ip', 'address'. 
-   - Se houver um Hash, ele é a evidência mais importante. Copie-o exatamente.
+# --- CONFIGURAÇÕES DO MOTOR LLAMA.CPP (Otimizado para 16GB RAM) ---
+# Substitua pelo nome exato do arquivo GGUF que você baixar
+ARQUIVO_MODELO_SLM = MODELOS_DIR / "qwen2.5-1.5b-instruct-q4_k_m.gguf"
 
-3. INTERPRETAÇÃO TÉCNICA:
-   - Interprete códigos (ex: "action=drop" -> "Bloqueio"), mas não extrapole fatos.
-   
-4. IDIOMA:
-   - Responda em Português do Brasil (PT-BR).
-</rules>
+LLAMA_CPP_CONFIG = {
+    "model_path": str(ARQUIVO_MODELO_SLM),
+    "n_ctx": 4096,          # Janela de contexto (Flash Attention)
+    "n_threads": 6,         # Núcleos de CPU dedicados
+    "n_gpu_layers": -1,     # -1 transfere todas as camadas possíveis para a VRAM (RX 6600)
+    "n_batch": 512,         # Tamanho do batching para processamento rápido
+    "verbose": False        # Desliga os logs poluídos do C++ no terminal
+}
 
-<output_format>
-Gere a resposta ESTRITAMENTE neste formato:
+# --- PROMPT DA CAMADA 3 (Otimizado e Enxuto) ---
+# Como a Camada 2 já mastiga o log, a IA não precisa mais caçar chaves JSON.
+PROMPT_SISTEMA_AGENTE = """
+Você é um Agente Autônomo de Cibersegurança (SOC Nível 1).
+Sua função é ler um resumo semântico de tráfego de rede (enriquecido com contexto de espaço, tempo e inteligência de ameaças) e gerar um Playbook de Resposta.
 
-IDENTIFICAÇÃO:
-(Resumo em 1 frase: Produto + Tipo de Ameaça + Status)
+REGRA DE OURO:
+1. Confie plenamente na 'DICA RAG' (Inteligência Externa). Se a dica indicar que o IP é seguro, classifique como Falso Positivo.
+2. Utilize as Tags de Tempo e Topologia para justificar a gravidade.
 
-RESUMO TÉCNICO:
-- ID do Evento: [Valor]
-- Ação do Controle: [Valor]
-- Produto/Fonte: [Valor]
-- Host/IP Relacionado: [Valor]
-- Usuário: [Valor]
-- Processo/Alvo: [Valor]
-- Hash/IoC: [Valor Exato ou "Não encontrado no log"]
-- Descrição: [Explicação curta baseada no campo description ou msg]
-
-EVIDÊNCIAS LITERAIS:
-(Copie 3 trechos "chave: valor" do JSON que provam o resumo acima)
-
-ETAPAS DO EVENTO:
-1. [O que aconteceu primeiro]
-2. [O que aconteceu depois]
-
-PLAYBOOK DE RESPOSTA (AÇÕES):
-IMEDIATAS (Contenção):
-- [Ação técnica focada no host/usuário/processo encontrado]
-
-PREVENÇÃO (Mitigação):
-- [Ação de longo prazo]
-</output_format>
+Retorne ESTRITAMENTE um objeto JSON com esta estrutura:
+{
+  "analise_contexto": "Sua interpretação rápida do cenário espacial e temporal",
+  "ameaca_identificada": "Nome do ataque ou Tráfego Normal",
+  "veredito": "BLOQUEAR, MONITORAR ou FALSO_POSITIVO",
+  "mitigacao": "Ação recomendada baseada na Dica RAG"
+}
 """
-
-# Configuração do Modelo
-MODELO_FAVORITO = "llama3-cyber"
