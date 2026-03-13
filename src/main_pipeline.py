@@ -9,8 +9,18 @@ from core.camada2_tradutor import TradutorSemanticoRAG
 from core.camada3_agente import AgenteSegurancaSLM
 from config import DADOS_RAW_DIR
 
-logging.basicConfig(level=logging.INFO, format='\n[%(asctime)s] %(levelname)s: %(message)s', datefmt='%H:%M:%S')
+# --- CONFIGURAÇÃO DE LOGS LIMPOS ---
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
+
+# Silenciar as bibliotecas "tagarelas"
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+
 logger = logging.getLogger("Orquestrador_ST")
+
+# ... (Mantenha o resto do código da função processar_logs_em_blocos igualzinho) ...
 
 # Adicionamos o parâmetro "max_blocos" para controlar quando parar
 def processar_logs_em_blocos(tamanho_bloco=5000, max_blocos=1):
@@ -21,7 +31,7 @@ def processar_logs_em_blocos(tamanho_bloco=5000, max_blocos=1):
     agente = AgenteSegurancaSLM(simular_sem_gpu=False) 
     
     # 1. Busca os arquivos reais do OSSEC novamente
-    arquivos = glob.glob(os.path.join(DADOS_RAW_DIR, "ossec-archive-*.log"))
+    arquivos = glob.glob(os.path.join(DADOS_RAW_DIR, "ossec-archive-demo.log"))
     if not arquivos:
         logger.error("Nenhum arquivo de log encontrado na pasta!")
         return
@@ -74,4 +84,4 @@ def processar_logs_em_blocos(tamanho_bloco=5000, max_blocos=1):
 if __name__ == "__main__":
     # Aqui controlamos a velocidade da apresentação. 
     # Ele vai ler 5000 linhas, gerar 1 relatório genial no JSON e parar sozinho.
-    processar_logs_em_blocos(tamanho_bloco=5000, max_blocos=1)
+    processar_logs_em_blocos(tamanho_bloco=4500, max_blocos=1)
