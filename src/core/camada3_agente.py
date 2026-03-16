@@ -116,7 +116,7 @@ VOCÊ DEVE responder APENAS com um objeto JSON válido, seguindo rigorosamente e
             # 1. Puxamos as variáveis AQUI, no topo do loop
             veredito = incidente.veredito.upper()
             alvo = incidente.id_alvo
-            
+           
             # 2. Só depois fazemos os ifs
             if veredito == "BLOQUEAR":
                 self._mcp_tool_bloquear_ip(alvo)
