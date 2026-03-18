@@ -1,156 +1,163 @@
 import os
 import json
 import logging
-import re
+import time
+import requests
 from datetime import datetime
-from typing import List
-from pydantic import BaseModel, Field
-from groq import Groq
 from dotenv import load_dotenv
+from groq import Groq
+from pydantic import BaseModel, ValidationError
+from typing import List
 
-# Carrega as variáveis do arquivo .env (como a GROQ_API_KEY)
 load_dotenv()
 
-logger = logging.getLogger("Camada3_Agente")
+logging.basicConfig(level=logging.INFO, format='[Camada3_Agente] %(message)s', datefmt='%H:%M:%S')
+logger = logging.getLogger("AgenteSOC")
 
-# --- 1. DEFINIÇÃO DO SCHEMA (PYDANTIC) ---
 class Incidente(BaseModel):
-    id_alvo: str = Field(description="IP ou identificador do atacante")
-    veredito: str = Field(description="Decisão da IA: BLOQUEAR, MONITORAR ou FALSO_POSITIVO")
-    justificativa: str = Field(description="Explicação baseada no contexto espaço-temporal e RAG")
+    id_alvo: str
+    padrao_ataque: str
+    dica_rag: str = ""
+    veredito: str = ""       
+    justificativa: str = ""  
 
-class RelatorioBatch(BaseModel):
-    incidentes: List[Incidente]
+class RelatorioTriagem(BaseModel):
+    incidentes: List[Incidente] = []
 
-
-# --- 2. CLASSE DO AGENTE ---
-class AgenteSegurancaSLM:
-    def __init__(self, simular_sem_gpu=False):
-        self.simular = simular_sem_gpu
-        self.api_key = os.environ.get("GROQ_API_KEY")
+class Camada3AgenteSOC:
+    def __init__(self):
+        self.ARQUIVO_PLAYBOOK_GLOBAL = "resultados/playbook_global.json"
         
-        if self.simular:
-            logger.info("Camada 3 inicializada em MODO SIMULAÇÃO (Mock).")
-        else:
-            if not self.api_key:
-                logger.error("🚨 GROQ_API_KEY não encontrada! Verifique o seu arquivo .env.")
-                raise ValueError("Chave da Groq ausente.")
-                
-            self.client = Groq(api_key=self.api_key)
-            # Usando o modelo mais recente e rápido (consome menos tokens)
-            self.modelo = "llama-3.1-8b-instant" 
-            logger.info(f"Camada 3 inicializada com IA REAL conectada à Groq (Modelo: {self.modelo}).")
-
-    def gerar_playbook_lote(self, texto_para_ia: str) -> RelatorioBatch:
-        """
-        Envia o texto ST-Align para o Llama julgar e devolve o Pydantic validado.
-        """
-        if self.simular:
-            ips_encontrados = re.findall(r'ORIGEM:\s*(\S+)', texto_para_ia)
-            lista_incidentes = []
-            for ip in set(ips_encontrados):
-                veredito = "MONITORAR" if ip.startswith("10.") or ip.startswith("192.") else "BLOQUEAR"
-                inc_mock = Incidente(id_alvo=ip, veredito=veredito, justificativa="Simulação de IA concluída.")
-                lista_incidentes.append(inc_mock)
-            return RelatorioBatch(incidentes=lista_incidentes)
-
-        logger.info("Enviando contexto Espaço-Temporal para o LLM (Groq)...")
+        # ==========================================
+        # 🎛️ PAINEL DE CONTROLE DA INTELIGÊNCIA ARTIFICIAL
+        # ==========================================
+        # Escolha o provedor: "groq" (API Nuvem) ou "ollama" (Processamento Local)
+        self.PROVEDOR = "groq"
         
-        prompt_sistema = """Você é um Analista de SOC Nível 3 Especialista em Raciocínio Espaço-Temporal.
-Seu trabalho é avaliar eventos extraídos de um firewall (ST-ALIGN) e as dicas de inteligência (RAG).
-Para cada ORIGEM (IP), você deve decidir o veredito:
-- BLOQUEAR (se for uma ameaça clara, externa ou ataque de força bruta).
-- MONITORAR (se for atividade suspeita dentro da rede interna ou que necessite de observação).
-- FALSO_POSITIVO (se for tráfego normal e benigno).
+        # Escolha o modelo exato que deseja usar:
+        # - Se PROVEDOR="groq" -> use "llama-3.1-8b-instant"
+        # - Se PROVEDOR="ollama" -> use "llama3.2", "pibic-cyber", "mistral", etc.
+        self.MODELO = "llama-3.1-8b-instant"
+        # ==========================================
+        
+        logger.info(f"Inicializando Agente SOC (Provedor: {self.PROVEDOR.upper()} | Modelo: {self.MODELO})...")
+        
+        if self.PROVEDOR == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("Erro: GROQ_API_KEY não encontrada no arquivo .env.")
+            self.cliente_groq = Groq(api_key=api_key)
+            
+        elif self.PROVEDOR == "ollama":
+            self.ollama_url = "http://localhost:11434/api/generate"
+            try:
+                requests.get("http://localhost:11434/")
+            except requests.exceptions.ConnectionError:
+                logger.error("ERRO: Servidor Ollama não está rodando!")
 
-Sua justificativa deve citar explicitamente o comportamento TEMPORAL (frequência) e ESPACIAL (topologia/nós).
+    def _consultar_ia(self, prompt_usuario):
+        prompt_sistema = """Você é um Analista de Segurança Nível 2 (SOC) Sênior.
+Sua função é ler os dados do incidente e a Dica RAG e decidir o veredito (veredito) e a justificativa (justificativa).
 
-VOCÊ DEVE responder APENAS com um objeto JSON válido, seguindo rigorosamente esta estrutura:
-{
-    "incidentes": [
-        {
-            "id_alvo": "IP",
-            "veredito": "DECISAO",
-            "justificativa": "Sua análise detalhada"
-        }
-    ]
-}"""
+DECISÕES POSSÍVEIS (SEJA RÍGIDO):
+1. BLOQUEAR: Se a Dica RAG indicar ALERTA CRÍTICO ou ALERTA ALTO e o comportamento for anômalo (Burst/Distribuído).
+2. MONITORAR: Se a Dica RAG indicar ALERTA MÉDIO (ex: Port Scan) ou se houver anomalias, mas o tráfego for de baixo risco.
+3. FALSO_POSITIVO: Se a Dica RAG indicar FALSO POSITIVO ou se o comportamento for 'Normal' na Whitelist Dinâmica.
 
-        try:
-            resposta = self.client.chat.completions.create(
-                model=self.modelo,
-                messages=[
-                    {"role": "system", "content": prompt_sistema},
-                    {"role": "user", "content": f"Analise os seguintes eventos e gere o JSON de resposta:\n\n{texto_para_ia}"}
-                ],
-                temperature=0.1, 
-                response_format={"type": "json_object"}
+REGRAS DE OURO:
+- NÃO INVENTE DADOS: Use apenas os IPs, portas e frequências que estão explicitamente no prompt.
+- FALSO POSITIVO: Priorize essa decisão se o IP for marcado como 'CONFIÁVEL' no prompt.
+- Responda APENAS no formato JSON estruturado exigido, sem nenhum texto adicional.
+"""
+        # --- ROTA DA GROQ ---
+        if self.PROVEDOR == "groq":
+            try:
+                chat_completion = self.cliente_groq.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": prompt_usuario}
+                    ],
+                    model=self.MODELO,
+                    temperature=0.0,
+                    response_format={"type": "json_object"}
+                )
+                return chat_completion.choices[0].message.content
+            except Exception as e:
+                logger.error(f"Erro na API Groq: {e}")
+                return None
+
+        # --- ROTA DO OLLAMA ---
+        elif self.PROVEDOR == "ollama":
+            prompt_completo = f"{prompt_sistema}\n\n{prompt_usuario}"
+            payload = {
+                "model": self.MODELO,
+                "prompt": prompt_completo,
+                "format": "json", 
+                "stream": False,
+                "options": {
+                    "temperature": 0.0 
+                }
+            }
+            try:
+                resposta = requests.post(self.ollama_url, json=payload)
+                resposta.raise_for_status()
+                return resposta.json().get("response", "")
+            except Exception as e:
+                logger.error(f"Erro no Ollama: {e}")
+                return None
+
+    def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1):
+        logger.info(f"=== [AGENTE] AVALIANDO {len(relatorio_triagem_input.incidentes)} INCIDENTES VIA {self.PROVEDOR.upper()} ===")
+        
+        relatorio_processado = RelatorioTriagem()
+        timestamp_analise = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for inc in relatorio_triagem_input.incidentes:
+            logger.info(f"Analisando IP: {inc.id_alvo}...")
+            
+            prompt_usuario = (
+                f"Analise o seguinte incidente de segurança e complete o JSON:\n\n"
+                f"{{ 'id_alvo': '{inc.id_alvo}', 'padrao_ataque': '{inc.padrao_ataque}', "
+                f"'dica_rag': '{inc.dica_rag}', 'veredito': '', 'justificativa': '' }}"
             )
             
-            conteudo_json = resposta.choices[0].message.content
-            dados_dict = json.loads(conteudo_json)
+            resposta_ia = self._consultar_ia(prompt_usuario)
             
-            relatorio = RelatorioBatch(**dados_dict)
-            return relatorio
+            if resposta_ia:
+                try:
+                    incidente_decidido = Incidente.model_validate_json(resposta_ia)
+                    # Adiciona uma "assinatura" para você saber quem tomou a decisão no Dashboard
+                    incidente_decidido.justificativa += f" (Avaliado por {self.PROVEDOR.upper()}[{self.MODELO}] em {timestamp_analise})"
+                    relatorio_processado.incidentes.append(incidente_decidido)
+                except ValidationError as e:
+                    logger.error(f"IA gerou JSON inválido para IP {inc.id_alvo}: {e}")
+            else:
+                inc.veredito = "FALHA_IA"
+                inc.justificativa = f"Erro na conexão com {self.PROVEDOR.upper()} durante a análise em {timestamp_analise}."
+                relatorio_processado.incidentes.append(inc)
 
-        except Exception as e:
-            logger.error(f"Erro na comunicação com a Groq ou falha na validação JSON: {e}")
-            return RelatorioBatch(incidentes=[])
+            # O freio mágico: Só ativa se estivermos usando a API da Groq
+            if self.PROVEDOR == "groq":
+                time.sleep(5)
 
-
-    # --- 3. A AÇÃO AGÊNTICA (MCP ATIVO) ---
-    # --- 3. A AÇÃO AGÊNTICA (MCP ATIVO) ---
-    def executar_mcp_salvar_lote(self, relatorio_batch: RelatorioBatch, num_lote: int):
-        if not relatorio_batch or not relatorio_batch.incidentes:
-            return
-            
-        logger.info(f"=== [MCP] INICIANDO EXECUÇÃO DAS FERRAMENTAS PARA O LOTE {num_lote} ===")
+        logger.info(f"Consolidando {len(relatorio_processado.incidentes)} novas decisões no Livro-Razão Global...")
         
+        decisoes_antigas = []
         os.makedirs("resultados", exist_ok=True)
-        caminho_arquivo = f"resultados/playbook_lote_{num_lote}.json"
         
-        with open(caminho_arquivo, "w", encoding="utf-8") as f:
-            json.dump(relatorio_batch.model_dump(), f, indent=4, ensure_ascii=False)
+        if os.path.exists(self.ARQUIVO_PLAYBOOK_GLOBAL):
+            try:
+                with open(self.ARQUIVO_PLAYBOOK_GLOBAL, "r", encoding="utf-8") as f:
+                    decisoes_antigas = json.load(f)
+                    if not isinstance(decisoes_antigas, list):
+                        decisoes_antigas = []
+            except Exception:
+                decisoes_antigas = []
+
+        novas_decisoes = [inc.model_dump() for inc in relatorio_processado.incidentes]
+        lista_consolidada = decisoes_antigas + novas_decisoes
+        
+        with open(self.ARQUIVO_PLAYBOOK_GLOBAL, "w", encoding="utf-8") as f:
+            json.dump(lista_consolidada, f, indent=4, ensure_ascii=False)
             
-        for incidente in relatorio_batch.incidentes:
-            # 1. Puxamos as variáveis AQUI, no topo do loop
-            veredito = incidente.veredito.upper()
-            alvo = incidente.id_alvo
-           
-            # 2. Só depois fazemos os ifs
-            if veredito == "BLOQUEAR":
-                self._mcp_tool_bloquear_ip(alvo)
-            elif veredito == "MONITORAR":
-                self._mcp_tool_adicionar_watchlist(alvo)
-            else: 
-                logger.info(f"\033[92m✅ [MCP-Tool] O IP {alvo} é tráfego normal (Falso Positivo). Nenhuma ação tomada.\033[0m")
-                
-        logger.info(f"=== [MCP] LOTE {num_lote} FINALIZADO E SALVO EM {caminho_arquivo} ===")
-
-    # --- FERRAMENTAS DO MCP (TOOLS REAIS COM ESCRITA EM ARQUIVO) ---
-  # --- FERRAMENTAS DO MCP (TOOLS REAIS COM CORES NO TERMINAL) ---
-    def _mcp_tool_bloquear_ip(self, alvo: str):
-        """Ação Real: Escreve o IP na Lista Negra do Firewall."""
-        cor_vermelha = "\033[91m"
-        resetar_cor = "\033[0m"
-        
-        logger.warning(f"{cor_vermelha}🚨 [MCP-Tool] AMEAÇA CRÍTICA! Executando DROP na borda e adicionando IP {alvo} à Blacklist!{resetar_cor}")
-        
-        caminho_blacklist = "resultados/blacklist_firewall.txt"
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        with open(caminho_blacklist, "a", encoding="utf-8") as f:
-            f.write(f"{agora} - ACTION=DROP - IP={alvo}\n")
-
-    def _mcp_tool_adicionar_watchlist(self, alvo: str):
-        """Ação Real: Escreve o IP na Watchlist do SIEM."""
-        cor_amarela = "\033[93m"
-        resetar_cor = "\033[0m"
-        
-        logger.info(f"{cor_amarela}👀 [MCP-Tool] Atividade suspeita. IP {alvo} adicionado à Watchlist do SIEM.{resetar_cor}")
-        
-        caminho_watchlist = "resultados/watchlist_siem.txt"
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        with open(caminho_watchlist, "a", encoding="utf-8") as f:
-            f.write(f"{agora} - STATUS=MONITORING - IP={alvo}\n")
+        logger.info(f"Livro-Razão Global atualizado. Total acumulado: {len(lista_consolidada)}.")

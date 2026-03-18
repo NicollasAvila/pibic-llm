@@ -1,109 +1,146 @@
 import os
 import json
+import logging
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+from typing import List, Optional
 
-# Carrega as chaves do ficheiro .env
 load_dotenv()
 
-# --- 1. DEFINIÇÃO DA RUBRICA DE AVALIAÇÃO (O GABARITO DO JUIZ) ---
-class AvaliacaoJuiz(BaseModel):
-    fidelidade_factual: int = Field(description="Nota 0-10: O SLM inventou dados? (10 = Não inventou nada, baseou-se apenas no contexto)")
-    acuracia_decisao: int = Field(description="Nota 0-10: A decisão (BLOQUEAR/MONITORAR/FALSO_POSITIVO) foi a mais correta para a segurança?")
-    qualidade_raciocinio: int = Field(description="Nota 0-10: A justificativa usou os conceitos de Tempo (frequência) e Espaço (alvos/nós)?")
-    adesao_instrucao: int = Field(description="Nota 0-10: O SLM foi direto ou gerou texto inútil/conversa?")
-    comentario_auditoria: str = Field(description="Um parágrafo curto (max 3 linhas) do Juiz justificando as notas dadas.")
+logging.basicConfig(level=logging.INFO, format='[Juiz_SOC_70B] %(message)s', datefmt='%H:%M:%S')
+logger = logging.getLogger("JuizAuditor")
 
-# --- 2. CONFIGURAÇÃO DO JUIZ (MODELO PESADO) ---
-# Atualizado para o motor mais recente da Groq
-MODELO_JUIZ = "llama-3.3-70b-versatile" 
-cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+class AvaliacaoIncidente(BaseModel):
+    ip_alvo: str = Field(..., alias="ip")
+    decisao_analista: str = Field(..., alias="decisao")
+    nota_fidelidade_factual: int = Field(..., ge=0, le=10, alias="fidelidade_factual")
+    nota_acuracia_decisao: int = Field(..., ge=0, le=10, alias="acuracia_decisao")
+    nota_qualidade_raciocinio: int = Field(..., ge=0, le=10, alias="qualidade_raciocinio")
+    nota_adesao_instrucao: int = Field(..., ge=0, le=10, alias="adesao_instrucao")
+    parecer_juiz: str
+    timestamp_auditoria: Optional[str] = None
 
-def auditar_decisoes_slm():
-    caminho_playbook = "resultados/playbook_lote_1.json"
-    caminho_auditoria = "resultados/auditoria_lote_1.json"
-    
-    if not os.path.exists(caminho_playbook):
-        print("❌ Erro: Playbook não encontrado. Rode o main_pipeline.py primeiro.")
-        return
+class RelatorioAuditoria(BaseModel):
+    avaliacoes: List[AvaliacaoIncidente] = []
 
-    with open(caminho_playbook, "r", encoding="utf-8") as f:
-        playbook = json.load(f)
+class JuizAuditorSOC:
+    def __init__(self):
+        self.ARQUIVO_AUDITORIA_GLOBAL = "resultados/auditoria_global.json"
+        self.ARQUIVO_PLAYBOOK_GLOBAL = "resultados/playbook_global.json"
         
-    incidentes = playbook.get("incidentes", [])
-    if not incidentes:
-        print("Nenhum incidente para avaliar.")
-        return
+        logger.info("Inicializando Juiz Auditor (Modelo: Llama 3.1 70B via Groq)...")
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("Erro: GROQ_API_KEY não encontrada no arquivo .env.")
+        self.cliente = Groq(api_key=api_key)
+        self.modelo = "llama-3.3-70b-versatile"
 
-    # Para não gastar muitos tokens na demonstração, o Juiz avalia apenas os 3 primeiros incidentes
-    amostra_para_auditoria = incidentes[:3]
-    resultados_auditoria = []
+    def _consultar_juiz(self, prompt_usuario):
+        # AQUI ESTÁ A MÁGICA: Damos o molde exato do JSON para a IA não se perder
+        prompt_sistema = """Você é um Auditor Sênior de Segurança da Informação.
+Sua função é auditar as decisões tomadas pelo SLM Analista SOC.
+Você é RÍGOROSO e DEVE penalizar severamente a invenção de dados (alucinação).
 
-    print(f"⚖️ Iniciando Tribunal de Auditoria (Modelo: {MODELO_JUIZ})")
-    print(f"Analisando {len(amostra_para_auditoria)} caso(s) usando Context-Grounded Evaluation...\n")
+CRITÉRIOS DE AVALIAÇÃO (NOTAS 0 A 10):
+1. fidelidade_factual: 0 se o analista inventou dados. 10 se seguiu apenas os fatos.
+2. acuracia_decisao: A decisão é tecnicamente correta com base no RAG e no MITRE?
+3. qualidade_raciocinio: A justificativa é lógica e baseada em evidências?
+4. adesao_instrucao: Respeitou as instruções de sistema?
 
-    for incidente in amostra_para_auditoria:
-        alvo = incidente.get("id_alvo")
-        veredito_slm = incidente.get("veredito")
-        justificativa_slm = incidente.get("justificativa")
-        
-        # --- O SEGREDO ESTÁ AQUI: ENVIAR O CONTEXTO ORIGINAL ---
-        contexto_original = f"""
-        [CENA DO CRIME - LOGS COMPRIMIDOS]
-        - IP Alvo: {alvo}
-        - Frequência de Acessos: {incidente.get('frequencia_eventos')} acessos
-        - Alvos Distintos na Rede: {incidente.get('alvos_distintos')}
-        - Portas Atacadas: {incidente.get('portas_frequentes')}
-        """
-        
-        # Transformamos a nossa classe Pydantic num Schema JSON legível para a IA
-        esquema_esperado = json.dumps(AvaliacaoJuiz.model_json_schema(), indent=2)
-        
-        prompt_juiz = f"""Você é um Auditor Sênior de Cibersegurança.
-Sua tarefa é avaliar a decisão tomada por um Analista Júnior (um SLM de 8B parâmetros).
-
-{contexto_original}
-
-[AÇÃO TOMADA PELO ANALISTA JÚNIOR]
-- Veredito Escolhido: {veredito_slm}
-- Justificativa Escrita: {justificativa_slm}
-
-OBRIGATÓRIO: Você deve retornar APENAS um JSON válido. Não adicione nenhum texto antes ou depois. 
-O JSON deve seguir EXATAMENTE esta estrutura de chaves:
-{esquema_esperado}
+Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
+{
+    "ip": "<escreva o IP aqui>",
+    "decisao": "<escreva a decisão tomada aqui>",
+    "fidelidade_factual": 10,
+    "acuracia_decisao": 10,
+    "qualidade_raciocinio": 10,
+    "adesao_instrucao": 10,
+    "parecer_juiz": "<escreva seu parecer crítico aqui>"
+}
 """
-        
-        print(f"Auditando decisão sobre o IP: {alvo}...")
-        
         try:
-            resposta = cliente_groq.chat.completions.create(
-                model=MODELO_JUIZ,
-                messages=[{"role": "user", "content": prompt_juiz}],
-                temperature=0.0, # Temperatura 0 = Avaliação matemática e fria, sem criatividade
+            chat_completion = self.cliente.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": prompt_usuario}
+                ],
+                model=self.modelo,
+                temperature=0.0,
                 response_format={"type": "json_object"}
             )
-            
-            # Força a extração e validação do JSON usando o Pydantic que criamos
-            json_resposta = json.loads(resposta.choices[0].message.content)
-            avaliacao_validada = AvaliacaoJuiz(**json_resposta)
-            
-            # Guardamos a avaliação juntando quem foi avaliado e as notas
-            resultados_auditoria.append({
-                "ip_avaliado": alvo,
-                "veredito_slm": veredito_slm,
-                "notas": avaliacao_validada.model_dump()
-            })
-            print(f"✅ Auditoria concluída para {alvo}.")
-            
+            return chat_completion.choices[0].message.content
         except Exception as e:
-            print(f"❌ Erro ao auditar o IP {alvo}: {e}")
+            logger.error(f"Erro ao consultar Groq (Juiz): {e}")
+            return None
 
-    # Salva o relatório final do Juiz
-    with open(caminho_auditoria, "w", encoding="utf-8") as f:
-        json.dump(resultados_auditoria, f, indent=4, ensure_ascii=False)
+    def executar_auditoria_acumulada(self):
+        logger.info(f"=== [JUIZ] INICIANDO AUDITORIA NO LIVRO-RAZÃO GLOBAL ===")
         
-    print(f"\n👨‍⚖️ Sessão encerrada. Relatório de Auditoria salvo em: {caminho_auditoria}")
+        if not os.path.exists(self.ARQUIVO_PLAYBOOK_GLOBAL):
+            logger.error("Playbook Global não encontrado. Execute o orquestrador primeiro.")
+            return
+
+        with open(self.ARQUIVO_PLAYBOOK_GLOBAL, "r", encoding="utf-8") as f:
+            todas_decisoes = json.load(f)
+            
+        logger.info(f"Total de {len(todas_decisoes)} decisões acumuladas encontradas no livro-razão.")
+
+        relatorio_auditoria = RelatorioAuditoria()
+        timestamp_agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        decisoes_para_auditar = todas_decisoes 
+
+        for inc in decisoes_para_auditar:
+            logger.info(f"Auditando decisão para IP: {inc.get('id_alvo', 'Desconhecido')}...")
+            
+            prompt_usuario = (
+                f"Audite a seguinte decisão do SLM Analista SOC:\n\n"
+                f"IP ALVO: '{inc.get('id_alvo', '')}'\n"
+                f"DADOS DO LOG: '{inc.get('padrao_ataque', '')}'\n"
+                f"DICA RAG: '{inc.get('dica_rag', '')}'\n"
+                f"DECISÃO DO ANALISTA: '{inc.get('veredito', '')}'\n"
+                f"JUSTIFICATIVA DO ANALISTA: '{inc.get('justificativa', '')}'\n\n"
+                f"Preencha o JSON com a sua avaliação."
+            )
+            
+            resposta_juiz = self._consultar_juiz(prompt_usuario)
+            
+            if resposta_juiz:
+                try:
+                    avaliacao = AvaliacaoIncidente.model_validate_json(resposta_juiz)
+                    avaliacao.timestamp_auditoria = timestamp_agora
+                    relatorio_auditoria.avaliacoes.append(avaliacao)
+                except ValidationError as e:
+                    logger.error(f"Juiz gerou JSON inválido: {e}")
+            
+            # Pausa de 3 segundos para evitar o erro 429 da Groq
+            time.sleep(3)
+
+        logger.info(f"Consolidando novas avaliações no histórico Global...")
+        
+        auditorias_antigas = []
+        os.makedirs("resultados", exist_ok=True)
+        
+        if os.path.exists(self.ARQUIVO_AUDITORIA_GLOBAL):
+            try:
+                with open(self.ARQUIVO_AUDITORIA_GLOBAL, "r", encoding="utf-8") as f:
+                    auditorias_antigas = json.load(f)
+                    if not isinstance(auditorias_antigas, list):
+                        auditorias_antigas = []
+            except Exception:
+                auditorias_antigas = []
+
+        novas_avaliacoes = [av.model_dump(by_alias=True) for av in relatorio_auditoria.avaliacoes]
+        lista_consolidada = auditorias_antigas + novas_avaliacoes
+        
+        with open(self.ARQUIVO_AUDITORIA_GLOBAL, "w", encoding="utf-8") as f:
+            json.dump(lista_consolidada, f, indent=4, ensure_ascii=False)
+            
+        logger.info(f"Histórico de Auditoria Global atualizado. Total de avaliações: {len(lista_consolidada)}.")
 
 if __name__ == "__main__":
-    auditar_decisoes_slm()
+    juiz = JuizAuditorSOC()
+    juiz.executar_auditoria_acumulada()

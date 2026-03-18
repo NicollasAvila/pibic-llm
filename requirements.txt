@@ -6,3 +6,5 @@ sentence-transformers
 pandas
 pydantic
 python-dotenv
+streamlit
+plotly

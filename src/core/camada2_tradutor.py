@@ -1,72 +1,56 @@
-import re
 import os
 import json
-import logging
+import numpy as np
 import faiss
+import logging
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger("Camada2_RAG")
-DIR_ATUAL = os.path.dirname(os.path.abspath(__file__))
-PASTA_VECTOR_DB = os.path.join(DIR_ATUAL, "../../dados/vector_db")
 
 class TradutorSemanticoRAG:
     """
-    Camada 2: Motor de Inteligência de Ameaças (RAG).
-    Lê os Caracteres Multimodais extraídos e anexa o contexto tático (MITRE ATT&CK).
+    Camada 2: Tradutor Semântico (RAG).
+    Conecta as extrações da Camada 1 com as regras do MITRE ATT&CK usando FAISS.
     """
     def __init__(self):
-        logger.info("Iniciando Motor RAG (Carregando FAISS)...")
+        self.caminho_indice = "dados/vector_db/base_conhecimento.index"
+        self.caminho_respostas = "dados/vector_db/respostas_rag.json"
+        
+        # Carrega o modelo de IA que transforma texto em matemática (Embeddings)
+        self.modelo_embedding = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        # Carrega o "Cérebro" do FAISS
+        if not os.path.exists(self.caminho_indice):
+            raise FileNotFoundError(f"Índice FAISS não encontrado em: {self.caminho_indice}. Rode gerar_indice_faiss.py primeiro.")
+        self.indice_faiss = faiss.read_index(self.caminho_indice)
+        
+        # Carrega o "Dicionário" de respostas MITRE
+        if not os.path.exists(self.caminho_respostas):
+            raise FileNotFoundError(f"Respostas RAG não encontradas em: {self.caminho_respostas}.")
+        with open(self.caminho_respostas, "r", encoding="utf-8") as f:
+            self.respostas = json.load(f)
+
+    def buscar_contexto(self, texto_padrao: str) -> str:
+        """
+        Recebe o comportamento do atacante, converte para vetor e busca a regra da empresa.
+        Esta é a função que o Orquestrador estava procurando!
+        """
         try:
-            self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+            # 1. Transforma a anomalia em vetor
+            vetor_busca = self.modelo_embedding.encode([texto_padrao])
             
-            caminho_indice = os.path.join(PASTA_VECTOR_DB, "base_conhecimento.index")
-            self.indice_faiss = faiss.read_index(caminho_indice)
+            # 2. Procura no FAISS qual regra mais se assemelha a este vetor (k=1 significa o 1º mais próximo)
+            distancias, indices = self.indice_faiss.search(vetor_busca, k=1)
+            indice_encontrado = indices[0][0]
             
-            caminho_respostas = os.path.join(PASTA_VECTOR_DB, "respostas_rag.json")
-            with open(caminho_respostas, "r", encoding="utf-8") as f:
-                self.respostas_rag = json.load(f)
+            # 3. Retorna a regra de segurança correspondente
+            if indice_encontrado != -1 and indice_encontrado < len(self.respostas):
+                regra_mitre = self.respostas[indice_encontrado]
+                logger.debug(f"RAG Encontrou: {regra_mitre}")
+                return regra_mitre
+            else:
+                return "FALSO POSITIVO: Comportamento não mapeado na matriz de risco. Tráfego considerado benigno."
                 
-            self.faiss_pronto = True
-            logger.info("FAISS e Embeddings carregados com sucesso!")
         except Exception as e:
-            logger.error(f"Erro ao carregar o RAG FAISS: {e}. Rode 'gerar_indice_faiss.py' antes.")
-            self.faiss_pronto = False
-
-    def buscar_dica_rag(self, action: str, dpt: str, ip_origem: str) -> str:
-        """Busca a inteligência mais próxima usando busca semântica vetorial (FAISS)."""
-        if not self.faiss_pronto:
-            return "Indisponível (Banco Vetorial offline)."
-            
-        query_busca = f"porta {dpt} {action} {ip_origem}"
-        vetor_busca = self.encoder.encode([query_busca])
-        
-        # O FAISS procura o vizinho mais próximo em milissegundos
-        distancias, indices = self.indice_faiss.search(vetor_busca, k=1)
-        
-        if distancias[0][0] > 1.5: 
-            return "Nenhuma ameaça conhecida diretamente correlacionada no banco de dados."
-            
-        return self.respostas_rag[indices[0][0]]
-
-    def enriquecer_st_align(self, texto_st: str) -> str:
-        """
-        Lê a string da Camada 1, extrai os parâmetros e anexa a Dica RAG.
-        Exemplo de entrada: "ST-ALIGN EVENTO | ORIGEM: 185.1.1.1 | ESPAÇO: ... | INFLUÊNCIA: Foco na porta 22..."
-        """
-        # Extrai o IP e a Porta usando Regex na string gerada pela Camada 1
-        match_ip = re.search(r'ORIGEM:\s*(\S+)', texto_st)
-        match_porta = re.search(r'porta\s*(\d+)', texto_st)
-        
-        ip_origem = match_ip.group(1) if match_ip else "IP_Desconhecido"
-        porta = match_porta.group(1) if match_porta else "0"
-        
-        # Como a Camada 1 já filtrou o ruído, assumimos que as ações aqui são bloqueios (DENY/DROP)
-        acao_predominante = "deny" 
-        
-        # Vai ao banco vetorial buscar o parecer técnico
-        dica_rag = self.buscar_dica_rag(action=acao_predominante, dpt=porta, ip_origem=ip_origem)
-        
-        # Devolve a string original enriquecida com a Dica RAG no final
-        resumo_enriquecido = f"{texto_st} | DICA RAG: {dica_rag}"
-        
-        return resumo_enriquecido
+            logger.error(f"Erro na busca vetorial RAG: {e}")
+            return "FALSO POSITIVO: Falha de segurança ao consultar base de conhecimento."

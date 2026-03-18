@@ -1,87 +1,136 @@
 import os
 import glob
-import time
+import json
 import logging
-from pathlib import Path
-
 from core.camada1_triagem import TriagemEspacoTemporal
 from core.camada2_tradutor import TradutorSemanticoRAG
-from core.camada3_agente import AgenteSegurancaSLM
-from config import DADOS_RAW_DIR
+from core.camada3_agente import Camada3AgenteSOC
+from core.simulador_red_team import injetar_ataque_no_lote
 
-# --- CONFIGURAÇÃO DE LOGS LIMPOS ---
+# ==========================================
+# 1. CONFIGURAÇÃO DE LOGS E CAMINHOS
+# ==========================================
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
+logger = logging.getLogger("Orquestrador_SOC")
 
-# Silenciar as bibliotecas "tagarelas"
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
-logging.getLogger("transformers").setLevel(logging.WARNING)
+PASTA_RAW = "dados/raw/"
+ARQUIVO_CONTROLE = "resultados/controle_leitura.json"
+ARQUIVO_PLAYBOOK = "resultados/playbook_global.json"
 
-logger = logging.getLogger("Orquestrador_ST")
+# ==========================================
+# 2. FUNÇÕES DE CONTROLE E BORDA
+# ==========================================
+def carregar_controle():
+    """Lê o 'marca-páginas' de forma segura, resistente a ficheiros corrompidos."""
+    padrao = {"arquivo_atual": "", "linha_atual": 0, "lotes_processados": 0}
+    if os.path.exists(ARQUIVO_CONTROLE):
+        try:
+            with open(ARQUIVO_CONTROLE, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+                # Garante que as chaves existem, se não, usa o padrão
+                return {**padrao, **dados}
+        except Exception:
+            return padrao
+    return padrao
 
-# ... (Mantenha o resto do código da função processar_logs_em_blocos igualzinho) ...
+def salvar_controle(controle):
+    os.makedirs("resultados", exist_ok=True)
+    with open(ARQUIVO_CONTROLE, "w", encoding="utf-8") as f:
+        json.dump(controle, f, indent=4)
 
-# Adicionamos o parâmetro "max_blocos" para controlar quando parar
-def processar_logs_em_blocos(tamanho_bloco=5000, max_blocos=1):
-    logger.info("=== INICIANDO PIPELINE ESPAÇO-TEMPORAL (MODO APRESENTAÇÃO) ===")
-    
-    filtro_st = TriagemEspacoTemporal()
-    tradutor = TradutorSemanticoRAG()
-    agente = AgenteSegurancaSLM(simular_sem_gpu=False) 
-    
-    # 1. Busca os arquivos reais do OSSEC novamente
-    arquivos = glob.glob(os.path.join(DADOS_RAW_DIR, "ossec-archive-demo.log"))
-    if not arquivos:
-        logger.error("Nenhum arquivo de log encontrado na pasta!")
+def atualizar_listas_borda():
+    """Lê as decisões globais e gera os TXTs para o Firewall e Dashboard."""
+    if not os.path.exists(ARQUIVO_PLAYBOOK): 
         return
         
-    arquivo_alvo = arquivos[0]
-    nome_arquivo = os.path.basename(arquivo_alvo)
-    logger.info(f"Lendo arquivo REAL: {nome_arquivo} em blocos de {tamanho_bloco} linhas.")
-    logger.info(f"Atenção: O sistema vai avaliar apenas {max_blocos} bloco(s) para a demonstração.")
+    try:
+        with open(ARQUIVO_PLAYBOOK, "r", encoding="utf-8") as f:
+            decisoes = json.load(f)
+    except Exception:
+        return
 
-    bloco_atual = []
-    contador_blocos = 1
-    total_ameacas = 0
+    bloqueados = set()
+    monitorados = set()
+    
+    for inc in decisoes:
+        if inc.get("veredito") == "BLOQUEAR": 
+            bloqueados.add(inc.get("id_alvo"))
+        elif inc.get("veredito") == "MONITORAR": 
+            monitorados.add(inc.get("id_alvo"))
 
-    with open(arquivo_alvo, "r", encoding="utf-8") as f:
-        for numero_linha, linha in enumerate(f, 1):
-            linha = linha.strip()
-            if linha:
-                bloco_atual.append(linha)
-            
-            if len(bloco_atual) >= tamanho_bloco:
-                logger.info(f"\n--- Processando Bloco {contador_blocos} ---")
-                
-                resumos_st = filtro_st.extrair_caracteres_st(bloco_atual)
-                
-                if resumos_st:
-                    resumos_enriquecidos = [tradutor.enriquecer_st_align(res) for res in resumos_st]
-                    texto_para_ia = "\n".join([f"[Ameaça {i+1}] {res}" for i, res in enumerate(resumos_enriquecidos)])
-                    
-                    inicio_ia = time.time()
-                    relatorio = agente.gerar_playbook_lote(texto_para_ia)
-                    tempo_ia = time.time() - inicio_ia
-                    
-                    agente.executar_mcp_salvar_lote(relatorio, num_lote=contador_blocos)
-                    logger.info(f"-> Bloco {contador_blocos} avaliado pela IA em {tempo_ia:.2f}s")
-                    
-                    total_ameacas += len(resumos_st)
-                
-                bloco_atual = []
-                
-                # --- A MÁGICA DA DEMONSTRAÇÃO ACONTECE AQUI ---
-                # Se já avaliamos a quantidade de blocos pedida, paramos de ler o arquivo gigante
-                if contador_blocos >= max_blocos:
-                    logger.info(f"\n⚠️ Limite de demonstração ({max_blocos} bloco) atingido. Encerrando leitura com sucesso.")
-                    break
-                    
-                contador_blocos += 1
+    with open("resultados/blacklist_firewall.txt", "w", encoding="utf-8") as f:
+        for ip in bloqueados: 
+            f.write(f"iptables -A INPUT -s {ip} -j DROP\n")
 
-    logger.info(f"\n=== APRESENTAÇÃO CONCLUÍDA! Total de ameaças agrupadas: {total_ameacas} ===")
+    with open("resultados/watchlist_siem.txt", "w", encoding="utf-8") as f:
+        for ip in monitorados: 
+            f.write(f"Ossec_Monitor: {ip} marcado para quarentena comportamental\n")
+
+# ==========================================
+# 3. PIPELINE PRINCIPAL
+# ==========================================
+def executar_pipeline(tamanho_bloco=4500):
+    logger.info("=== INICIANDO PIPELINE SOC (MODO PRODUÇÃO CONTÍNUA) ===")
+
+    logger.info("Inicializando Motor RAG (Carregando FAISS)...")
+    tradutor = TradutorSemanticoRAG()
+    logger.info("FAISS e Embeddings carregados com sucesso!")
+
+    agente = Camada3AgenteSOC()
+    logger.info("Camada 3 inicializada com IA conectada à Groq.")
+
+    triagem = TriagemEspacoTemporal()
+    logger.info("Camada 1 (UBA e Baseline) inicializada.")
+
+    arquivos_log = sorted(glob.glob(os.path.join(PASTA_RAW, "ossec-archive-*.log")))
+    if not arquivos_log:
+        logger.error("Nenhum log de rede encontrado na pasta raw.")
+        return
+
+    controle = carregar_controle()
+    arquivo_alvo = arquivos_log[0] 
+
+    if controle["arquivo_atual"] != arquivo_alvo:
+        controle["arquivo_atual"] = arquivo_alvo
+        controle["linha_atual"] = 0
+
+    logger.info(f"Lendo arquivo: {os.path.basename(arquivo_alvo)}")
+    logger.info(f"Retomando leitura a partir da linha: {controle['linha_atual']}")
+
+    linhas_lote = []
+    with open(arquivo_alvo, "r", encoding="utf-8", errors="ignore") as f:
+        for _ in range(controle["linha_atual"]):
+            f.readline()
+
+        for _ in range(tamanho_bloco):
+            linha = f.readline()
+            if not linha:
+                break
+            linhas_lote.append(linha)
+
+    if not linhas_lote:
+        logger.info("Fim do arquivo alcançado. Sem tráfego novo.")
+        return
+
+    logger.info(f"Extraídas {len(linhas_lote)} novas linhas reais.")
+    
+    # Execução das Camadas
+    linhas_lote_misto = injetar_ataque_no_lote(linhas_lote, probabilidade_injecao=1.0)
+    relatorio = triagem.processar_bloco(linhas_lote_misto)
+    logger.info(f"Enviando {len(relatorio.incidentes)} incidentes para o SLM...")
+
+    for inc in relatorio.incidentes:
+        inc.dica_rag = tradutor.buscar_contexto(inc.padrao_ataque)
+
+    controle["lotes_processados"] += 1
+    agente.executar_mcp_salvar_lote(relatorio, num_lote=controle["lotes_processados"])
+
+    atualizar_listas_borda()
+
+    controle["linha_atual"] += len(linhas_lote)
+    salvar_controle(controle)
+    
+    logger.info("=== PIPELINE EXECUTADO COM SUCESSO. ===")
 
 if __name__ == "__main__":
-    # Aqui controlamos a velocidade da apresentação. 
-    # Ele vai ler 5000 linhas, gerar 1 relatório genial no JSON e parar sozinho.
-    processar_logs_em_blocos(tamanho_bloco=4500, max_blocos=1)
+    executar_pipeline()
