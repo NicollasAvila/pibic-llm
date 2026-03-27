@@ -3,6 +3,7 @@ import json
 import numpy as np
 import faiss
 import logging
+import torch  # NOVO: Importado para checar a disponibilidade da placa de vídeo
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger("Camada2_RAG")
@@ -16,8 +17,14 @@ class TradutorSemanticoRAG:
         self.caminho_indice = "dados/vector_db/base_conhecimento.index"
         self.caminho_respostas = "dados/vector_db/respostas_rag.json"
         
-        # Carrega o modelo de IA que transforma texto em matemática (Embeddings)
-        self.modelo_embedding = SentenceTransformer('all-MiniLM-L6-v2')
+        # --- A MÁGICA DA PERFORMANCE AQUI ---
+        # Verifica se há aceleração gráfica. Como você usa uma RX 6600, se o PyTorch 
+        # estiver configurado com ROCm, ele usará a GPU. Senão, faz fallback seguro pra CPU.
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        logger.info(f"[Camada 2] RAG otimizado inicializando no dispositivo: {self.device.upper()}")
+        
+        # Carrega o modelo de IA que transforma texto em matemática (Embeddings) na GPU/CPU
+        self.modelo_embedding = SentenceTransformer('all-MiniLM-L6-v2', device=self.device)
         
         # Carrega o "Cérebro" do FAISS
         if not os.path.exists(self.caminho_indice):
@@ -36,7 +43,7 @@ class TradutorSemanticoRAG:
         Esta é a função que o Orquestrador estava procurando!
         """
         try:
-            # 1. Transforma a anomalia em vetor
+            # 1. Transforma a anomalia em vetor (Agora muito mais rápido se estiver na GPU)
             vetor_busca = self.modelo_embedding.encode([texto_padrao])
             
             # 2. Procura no FAISS qual regra mais se assemelha a este vetor (k=1 significa o 1º mais próximo)

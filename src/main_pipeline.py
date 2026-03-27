@@ -4,18 +4,21 @@ import json
 import logging
 import re
 import time
+import threading
+import queue
+
 from core.camada1_triagem import TriagemEspacoTemporal
 from core.camada2_tradutor import TradutorSemanticoRAG
 from core.camada3_agente import Camada3AgenteSOC
-
-# O Red Team foi desativado para o Stress Test com dados 100% reais.
-# from core.simulador_red_team import injetar_ataque_no_lote
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger("Orquestrador_SOC")
 
 PASTA_RAW = "dados/raw/"
 ARQUIVO_CONTROLE = "resultados/controle_leitura.json"
+
+# === A NOVA FILA DE PRODUÇÃO ===
+fila_incidentes = queue.Queue()
 
 def carregar_controle():
     padrao = {"arquivo_atual": "", "linha_atual": 0, "lotes_processados": 0}
@@ -32,12 +35,34 @@ def salvar_controle(controle):
     with open(ARQUIVO_CONTROLE, "w", encoding="utf-8") as f:
         json.dump(controle, f, indent=4)
 
+# === O CONSUMIDOR (Roda em paralelo o tempo todo) ===
+def worker_ia(agente):
+    logger.info("[Thread IA] Consumidor iniciado. Aguardando anomalias na fila...")
+    while True:
+        item = fila_incidentes.get()
+        if item is None: 
+            break # Sinal para desligar a thread
+        
+        relatorio, num_lote = item
+        logger.info(f"[Thread IA] Puxando Lote {num_lote} da fila... Iniciando inferência no SLM.")
+        
+        # A IA processa no tempo dela, sem travar o resto do sistema
+        agente.executar_mcp_salvar_lote(relatorio, num_lote=num_lote)
+        
+        logger.info(f"[Thread IA] Lote {num_lote} finalizado e salvo no Playbook!")
+        fila_incidentes.task_done() # Avisa a fila que terminou este pacote
+
+# === O PRODUTOR (Lê os logs na velocidade da luz) ===
 def executar_pipeline(tamanho_bloco=4500):
-    logger.info("=== INICIANDO STRESS TEST: CONSUMO CONTÍNUO DO LOG ===")
+    logger.info("=== INICIANDO SOC 24/7 (ARQUITETURA ASSÍNCRONA) ===")
 
     tradutor = TradutorSemanticoRAG()
     agente = Camada3AgenteSOC()
     triagem = TriagemEspacoTemporal()
+
+    # Liga a Thread da IA em segundo plano (Daemon)
+    thread_ia = threading.Thread(target=worker_ia, args=(agente,), daemon=True)
+    thread_ia.start()
 
     arquivos_log = sorted(glob.glob(os.path.join(PASTA_RAW, "ossec-archive-*.log")))
     if not arquivos_log:
@@ -52,11 +77,8 @@ def executar_pipeline(tamanho_bloco=4500):
         controle["linha_atual"] = 0
 
     logger.info(f"Lendo o arquivo: {arquivo_alvo}")
-    logger.info(f"Avançando para a linha {controle['linha_atual']} (memória salva)...")
-
-    # Abre o ficheiro apenas uma vez e continua a ler até ao fim
+    
     with open(arquivo_alvo, "r", encoding="utf-8", errors="ignore") as f:
-        # Pula as linhas já lidas em execuções anteriores
         for _ in range(controle["linha_atual"]): 
             f.readline()
 
@@ -64,13 +86,11 @@ def executar_pipeline(tamanho_bloco=4500):
             linhas_lote = []
             linhas_descartadas_firewall = 0
             
-            # Lê o próximo bloco de 'tamanho_bloco' linhas
             for _ in range(tamanho_bloco):
                 linha = f.readline()
                 if not linha: 
-                    break # Fim do ficheiro alcançado neste bloco
+                    break 
                 
-                # EARLY-DROP: O Palo Alto usa letras minúsculas (drop, deny, reset-both, reset-server)
                 if re.search(r'action=(drop|deny|reset\-.*)', linha, re.IGNORECASE):
                     linhas_descartadas_firewall += 1
                     continue
@@ -80,33 +100,37 @@ def executar_pipeline(tamanho_bloco=4500):
             total_lidas_neste_bloco = len(linhas_lote) + linhas_descartadas_firewall
 
             if total_lidas_neste_bloco == 0:
-                logger.info("🎉 FIM DO ARQUIVO ALCANÇADO! Todo o tráfego foi processado.")
+                logger.info("🎉 Fim do log alcançado. Firewall sem tráfego novo.")
                 break
 
-            logger.info(f"Processando bloco... Lidas {total_lidas_neste_bloco} linhas. "
-                        f"[{linhas_descartadas_firewall} descartadas nativamente pelo Firewall]")
+            logger.info(f"[Leitor Log] Processando {total_lidas_neste_bloco} linhas... [{linhas_descartadas_firewall} descartes nativos]")
             
-            # Camada 1 analisa as linhas e constrói o Grafo
             relatorio = triagem.processar_bloco(linhas_lote)
             
             if len(relatorio.incidentes) > 0:
-                logger.warning(f"🚨 GATILHO ACIONADO! {len(relatorio.incidentes)} anomalias reais enviadas para o SLM.")
+                logger.warning(f"🚨 [Leitor Log] {len(relatorio.incidentes)} anomalias detectadas! Enviando para a Fila da IA.")
+                
                 for inc in relatorio.incidentes:
                     inc.dica_rag = tradutor.buscar_contexto(inc.padrao_ataque)
 
                 controle["lotes_processados"] += 1
-                agente.executar_mcp_salvar_lote(relatorio, num_lote=controle["lotes_processados"])
+                
+                # A MÁGICA ACONTECE AQUI: Em vez de chamar a IA, apenas joga na fila e continua lendo!
+                fila_incidentes.put((relatorio, controle["lotes_processados"]))
             else:
-                logger.info("Tráfego 100% normal. SLM mantido em repouso (Economia de Recursos).")
+                logger.info("[Leitor Log] Tráfego normal.")
 
-            # Salva o progresso e avança para o próximo bloco do Loop
             controle["linha_atual"] += total_lidas_neste_bloco
             salvar_controle(controle)
             
-            # Pausa de 1 segundo para você conseguir ler o terminal e não fritar a CPU
-            time.sleep(1)
+            time.sleep(0.1) # Pausa minúscula apenas para não monopolizar a CPU
 
-    logger.info("=== PIPELINE CONTÍNUO FINALIZADO COM SUCESSO. ===")
+    logger.info("=== LEITURA DE ARQUIVO CONCLUÍDA ===")
+    logger.info("Aguardando a Thread da IA terminar de esvaziar a fila de incidentes...")
+    
+    # Trava o script aqui até a IA terminar todos os pacotes pendentes na fila
+    fila_incidentes.join()
+    logger.info("=== SOC FINALIZADO COM SUCESSO. TODAS AS AMEAÇAS JULGADAS. ===")
 
 if __name__ == "__main__":
     executar_pipeline()
