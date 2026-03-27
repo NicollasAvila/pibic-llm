@@ -1,4 +1,3 @@
-```markdown
 # Llama-Cyber: Arquitetura Híbrida de Resposta a Incidentes (Edge Computing)
 
 **Projeto de Pesquisa (PIBIC):** Avaliação de Small Language Models (SLMs) para Resposta a Incidentes em Ambientes com Restrição de Hardware (16GB RAM).
@@ -49,54 +48,47 @@ pibic-llm/
 │   └── main_pipeline.py      # Orquestrador das Camadas 1, 2 e 3
 ├── .env.example
 ├── requirements.txt
+├── soc.bat                   # CLI Interativo para Windows
 └── README.md
-
 ```
 
-## Instalação e Configuração
+## Como Rodar o Projeto
 
 ### Pré-requisitos
-
 * Python 3.10 ou superior.
 * Chave de API da [Groq Cloud](https://console.groq.com/) (Para o LLM Juiz).
 
-### Passo a Passo
+### 1. Instalação Básica
 
-1. **Clone o repositório:**
+Clone o repositório, ative o ambiente virtual (`.venv` ou `venv`) e instale os requerimentos:
 
 ```bash
-git clone [https://github.com/NicollasAvila/pibic-llm.git](https://github.com/NicollasAvila/pibic-llm.git)
+git clone https://github.com/NicollasAvila/pibic-llm.git
 cd pibic-llm
 
-```
+# Crie e ative o ambiente virtual (Windows)
+python -m venv .venv
+.\.venv\Scripts\activate
 
-2. **Crie e ative o ambiente virtual:**
-
-```bash
-python -m venv venv
-# Windows:
-.\venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-```
-
-3. **Instale as dependências:**
-
-```bash
+# Instale os pacotes
 pip install -r requirements.txt
-
 ```
 
-4. **Variáveis de Ambiente:**
-Renomeie `.env.example` para `.env` e insira sua chave da Groq:
+### 2. Configuração do Modelo e API
 
-```env
-GROQ_API_KEY=sua_chave_aqui
+1. Renomeie o arquivo `.env.example` para `.env` e coloque sua chave Groq (`GROQ_API_KEY=sua_chave_aqui`).
+2. Garanta que o LLM local está rodando (via Ollama na porta padrão `11434` ou baixando um `.gguf` conforme o mapeamento no `src/config.py`).
 
+### 3. Operando o SOC via Painel Interativo
+
+Para testar as camadas e visualizar dados sem entrar em linhas de comando longas, basta iniciar o Menu Interativo na raiz do projeto (apenas para Windows):
+
+```cmd
+soc.bat
 ```
 
-5. **Download do Modelo Quantizado:**
-Para rodar a Camada 3 localmente com alta velocidade, baixe o modelo em formato `GGUF`e aloque-o na pasta raiz ou configure o caminho no arquivo `src/config.py`.
-
----
+No menu, selecione entre:
+* `[1] Rodar o Pipeline Principal:` Inicia o `main_pipeline.py`. Lê velozmente os logs do firewall/siem na pasta `dados/raw/`, faz a triagem por regex (Camada 1), busca ameaças no FAISS (Camada 2) e repassa as anomalias num sistema de fila para o LLM Local (Camada 3) julgar e emitir vereditos.
+* `[2] Abrir o Dashboard:` Sobe o servidor Streamlit web (`app_dashboard.py`) para você visualizar estatísticas globais graficamente, relatórios e vereditos de tráfego.
+* `[3] Rodar a Auditoria:` Chama o Juiz 70B (Groq) no `juiz_70b.py` para avaliar se os julgamentos do LLM local foram bons ou ruins (Pipeline de ML/Treinamento contínuo).
+* `[4] Atualizar Base de Conhecimento:` Gera um novo índice RAG caso você adicione novos `.txt` ou `.pdf` de regras corporativas.
