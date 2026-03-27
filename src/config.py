@@ -4,41 +4,44 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- MAPEAMENTO DE PASTAS ---
+# =====================================================================
+# 📂 1. MAPEAMENTO DE DIRETÓRIOS E ARQUIVOS (Single Source of Truth)
+# =====================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Pastas Principais
 DADOS_RAW_DIR = BASE_DIR / "dados" / "raw"
 VECTOR_DB_DIR = BASE_DIR / "dados" / "vector_db"
-MODELOS_DIR = BASE_DIR / "modelos"
 RESULTADOS_DIR = BASE_DIR / "resultados"
 
-# --- CONFIGURAÇÕES DO MOTOR LLAMA.CPP (Otimizado para 16GB RAM) ---
-# Substitua pelo nome exato do arquivo GGUF que você baixar
-ARQUIVO_MODELO_SLM = MODELOS_DIR / "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+# Arquivos de Estado e Persistência (Garante que todas as camadas escrevem no mesmo sítio)
+ARQUIVO_PLAYBOOK = RESULTADOS_DIR / "playbook_global.json"
+ARQUIVO_SFT = RESULTADOS_DIR / "fine_tuning_dataset.jsonl"
+ARQUIVO_MEMORIA = RESULTADOS_DIR / "memoria_global_ips.json"
+ARQUIVO_CONTROLE = RESULTADOS_DIR / "controle_leitura.json"
 
-LLAMA_CPP_CONFIG = {
-    "model_path": str(ARQUIVO_MODELO_SLM),
-    "n_ctx": 4096,          # Janela de contexto (Flash Attention)
-    "n_threads": 6,         # Núcleos de CPU dedicados
-    "n_gpu_layers": -1,     # -1 transfere todas as camadas possíveis para a VRAM (RX 6600)
-    "n_batch": 512,         # Tamanho do batching para processamento rápido
-    "verbose": False        # Desliga os logs poluídos do C++ no terminal
-}
+# =====================================================================
+# 🧠 2. MOTOR DO AGENTE IA (Ollama REST API)
+# =====================================================================
+# Llama 3.2 (3B) otimizado para a sua RX 6600
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+SLM_MODELO = os.getenv("SLM_MODELO", "llama3.2")
 
-# --- PROMPT DA CAMADA 3 (Otimizado e Enxuto) ---
-# Como a Camada 2 já mastiga o log, a IA não precisa mais caçar chaves JSON.
-PROMPT_SISTEMA_AGENTE = """
-Você é um Agente Autônomo de Cibersegurança (SOC Nível 1).
-Sua função é ler um resumo semântico de tráfego de rede (enriquecido com contexto de espaço, tempo e inteligência de ameaças) e gerar um Playbook de Resposta.
+# Configurações de Hardware e Timeout
+OLLAMA_TIMEOUT_SEG = 180         # Tempo de paciência do Python para a GPU responder
+OLLAMA_KEEP_ALIVE = "15m"        # Mantém o modelo na VRAM entre os ataques
+TAMANHO_LOTE_INFERENCIA = 3      # Quantos incidentes a placa de vídeo processa de uma vez
 
-REGRA DE OURO:
-1. Confie plenamente na 'DICA RAG' (Inteligência Externa). Se a dica indicar que o IP é seguro, classifique como Falso Positivo.
-2. Utilize as Tags de Tempo e Topologia para justificar a gravidade.
+# =====================================================================
+# ⚙️ 3. REGRAS DO MOTOR DE INGESTÃO 24/7 (Camada 1)
+# =====================================================================
+# Parâmetros de Leitura de Disco
+TAMANHO_BLOCO_LEITURA = 4500     # Quantas linhas lê de cada vez
+LOTES_PARA_CHECKPOINT = 50       # Salva o grafo no disco a cada 50 blocos (Reduz gargalo I/O)
 
-Retorne ESTRITAMENTE um objeto JSON com esta estrutura:
-{
-  "analise_contexto": "Sua interpretação rápida do cenário espacial e temporal",
-  "ameaca_identificada": "Nome do ataque ou Tráfego Normal",
-  "veredito": "BLOQUEAR, MONITORAR ou FALSO_POSITIVO",
-  "mitigacao": "Ação recomendada baseada na Dica RAG"
-}
-"""
+# Parâmetros de Sobrevivência (Garbage Collector)
+HORAS_TTL_MEMORIA = 2            # Apaga IPs da memória RAM se ficarem mudos por 2 horas
+
+# Limiares Matemáticos (Matemática da Janela Deslizante)
+LIMIAR_BURST_EVS = 5.0           # Acima de 5 eventos/segundo é considerado anómalo
+LIMIAR_DISPERSAO = 3             # Tentar aceder a mais de 3 IPs diferentes é suspeito

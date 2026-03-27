@@ -1,10 +1,18 @@
-ollama
-llama-cpp-python
-groq
-faiss-cpu
+# --- CAMADA 2: Tradutor RAG & Vetores ---
 sentence-transformers
-pandas
+faiss-cpu
+
+# --- CAMADA 3: IA na Borda (Edge SLM) ---
 pydantic
-python-dotenv
+requests
+
+# --- JUIZ AUDITOR (Cloud LLM) ---
+groq
+
+# --- DASHBOARD (Visualização) ---
 streamlit
+pandas
 plotly
+
+# --- UTILITÁRIOS ---
+python-dotenv

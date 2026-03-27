@@ -1,45 +1,37 @@
-# --- SISTEMA & PYTHON (Padrão) ---
+# --- SISTEMA & PYTHON ---
 __pycache__/
 *.py[cod]
 .DS_Store
 Thumbs.db
+.venv/
+venv/
+env/
 
 # --- SEGURANÇA (Crítico) ---
 .env
 .env.local
 
-# --- AMBIENTE VIRTUAL ---
-.venv/
-venv/
-env/
-
 # --- IDE ---
 .vscode/
+.idea/
 
-# --- MODELOS (Pesados) ---
+# --- MODELOS LOCAIS (Pesados) ---
 *.gguf
 *.bin
-# Ignora tudo na pasta modelos, exceto o arquivo .gitkeep
 modelos/*
 !modelos/.gitkeep
 
-# --- DADOS & RAG (Onde moram os gigabytes) ---
-# Ignora TODOS os arquivos de log globalmente para evitar acidentes
+# --- DADOS BRUTOS & LOGS (GigaBytes) ---
 *.log
-
-# Ignora tudo na pasta raw (e dados/raw), mantendo apenas o .gitkeep
 dados/raw/*
 !dados/raw/.gitkeep
-raw/*
-!raw/.gitkeep
-!raw/dataset_sintetico.json
 
-# Ignora os bancos de dados vetoriais gerados localmente
+# --- BANCO DE DADOS VETORIAL (RAG) ---
 dados/vector_db/*
 !dados/vector_db/.gitkeep
 *.index
 
-# --- RESULTADOS ---
-# Ignora os relatórios gerados, mantém a pasta
+# --- RESULTADOS & MEMÓRIA 24/7 (Dinâmicos) ---
+# Impede que o Playbook, o Grafo e o dataset SFT sujem os commits
 resultados/*
 !resultados/.gitkeep

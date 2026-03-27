@@ -8,6 +8,9 @@ from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
 from typing import List, Optional
 
+# === IMPORTAÇÃO DA NOSSA ARQUITETURA ===
+from core.config import ARQUIVO_PLAYBOOK, RESULTADOS_DIR
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='[Juiz_SOC_70B] %(message)s', datefmt='%H:%M:%S')
@@ -28,10 +31,11 @@ class RelatorioAuditoria(BaseModel):
 
 class JuizAuditorSOC:
     def __init__(self):
-        self.ARQUIVO_AUDITORIA_GLOBAL = "resultados/auditoria_global.json"
-        self.ARQUIVO_PLAYBOOK_GLOBAL = "resultados/playbook_global.json"
+        self.ARQUIVO_PLAYBOOK_GLOBAL = ARQUIVO_PLAYBOOK
+        # Usa o config.py para o caminho correto
+        self.ARQUIVO_AUDITORIA_GLOBAL = RESULTADOS_DIR / "auditoria_global.json" 
         
-        logger.info("Inicializando Juiz Auditor (Modelo: Llama 3.1 70B via Groq)...")
+        logger.info("Inicializando Juiz Auditor (Modelo: Llama 3.3 70B via Groq)...")
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError("Erro: GROQ_API_KEY não encontrada no arquivo .env.")
@@ -39,16 +43,15 @@ class JuizAuditorSOC:
         self.modelo = "llama-3.3-70b-versatile"
 
     def _consultar_juiz(self, prompt_usuario):
-        # AQUI ESTÁ A MÁGICA: Damos o molde exato do JSON para a IA não se perder
         prompt_sistema = """Você é um Auditor Sênior de Segurança da Informação.
-Sua função é auditar as decisões tomadas pelo SLM Analista SOC.
-Você é RÍGOROSO e DEVE penalizar severamente a invenção de dados (alucinação).
+Sua função é auditar as decisões tomadas por um Analista SOC (IA Menor).
+Você é RIGOROSO e DEVE penalizar severamente a invenção de dados (alucinação).
 
 CRITÉRIOS DE AVALIAÇÃO (NOTAS 0 A 10):
-1. fidelidade_factual: 0 se o analista inventou dados. 10 se seguiu apenas os fatos.
-2. acuracia_decisao: A decisão é tecnicamente correta com base no RAG e no MITRE?
-3. qualidade_raciocinio: A justificativa é lógica e baseada em evidências?
-4. adesao_instrucao: Respeitou as instruções de sistema?
+1. fidelidade_factual: 0 se o analista inventou dados. 10 se a análise bater 100% com o log bruto.
+2. acuracia_decisao: A decisão final bate com a instrução do RAG?
+3. qualidade_raciocinio: A 'analise_contexto' escrita pelo analista tem lógica e suporta o veredito final?
+4. adesao_instrucao: Respeitou a regra de nunca inventar informações?
 
 Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
 {
@@ -58,7 +61,7 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
     "acuracia_decisao": 10,
     "qualidade_raciocinio": 10,
     "adesao_instrucao": 10,
-    "parecer_juiz": "<escreva seu parecer crítico aqui>"
+    "parecer_juiz": "<escreva seu parecer crítico em 2 frases>"
 }
 """
         try:
@@ -86,23 +89,46 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
         with open(self.ARQUIVO_PLAYBOOK_GLOBAL, "r", encoding="utf-8") as f:
             todas_decisoes = json.load(f)
             
-        logger.info(f"Total de {len(todas_decisoes)} decisões acumuladas encontradas no livro-razão.")
+        logger.info(f"Total de {len(todas_decisoes)} decisões acumuladas no Playbook.")
+
+        # --- OTIMIZAÇÃO: EVITA RE-AVALIAR O QUE JÁ FOi JULGADO ---
+        auditorias_antigas = []
+        if os.path.exists(self.ARQUIVO_AUDITORIA_GLOBAL):
+            try:
+                with open(self.ARQUIVO_AUDITORIA_GLOBAL, "r", encoding="utf-8") as f:
+                    auditorias_antigas = json.load(f)
+                    if not isinstance(auditorias_antigas, list): auditorias_antigas = []
+            except Exception:
+                pass
+
+        # Cria um set com "IP+Decisao" para saber o que já foi auditado
+        ja_auditados = {f"{av.get('ip')}_{av.get('decisao')}" for av in auditorias_antigas}
+        
+        decisoes_para_auditar = []
+        for inc in todas_decisoes:
+            assinatura = f"{inc.get('id_alvo')}_{inc.get('veredito')}"
+            if assinatura not in ja_auditados:
+                decisoes_para_auditar.append(inc)
+
+        if not decisoes_para_auditar:
+            logger.info("✅ Nenhuma decisão nova para auditar. Tudo está atualizado.")
+            return
+
+        logger.info(f"🔍 Auditando {len(decisoes_para_auditar)} decisões NOVAS e inéditas...")
 
         relatorio_auditoria = RelatorioAuditoria()
         timestamp_agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        decisoes_para_auditar = todas_decisoes 
-
         for inc in decisoes_para_auditar:
-            logger.info(f"Auditando decisão para IP: {inc.get('id_alvo', 'Desconhecido')}...")
+            logger.info(f"A julgar IP: {inc.get('id_alvo', 'Desconhecido')}...")
             
             prompt_usuario = (
                 f"Audite a seguinte decisão do SLM Analista SOC:\n\n"
                 f"IP ALVO: '{inc.get('id_alvo', '')}'\n"
-                f"DADOS DO LOG: '{inc.get('padrao_ataque', '')}'\n"
+                f"DADOS DO LOG BRUTO: '{inc.get('padrao_ataque', '')}'\n"
                 f"DICA RAG: '{inc.get('dica_rag', '')}'\n"
-                f"DECISÃO DO ANALISTA: '{inc.get('veredito', '')}'\n"
-                f"JUSTIFICATIVA DO ANALISTA: '{inc.get('justificativa', '')}'\n\n"
+                f"ANÁLISE DE CONTEXTO DO ANALISTA: '{inc.get('analise_contexto', 'Não informada')}'\n"
+                f"DECISÃO FINAL DO ANALISTA: '{inc.get('veredito', '')}'\n\n"
                 f"Preencha o JSON com a sua avaliação."
             )
             
@@ -116,30 +142,18 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
                 except ValidationError as e:
                     logger.error(f"Juiz gerou JSON inválido: {e}")
             
-            # Pausa de 3 segundos para evitar o erro 429 da Groq
-            time.sleep(3)
+            # Pausa estendida para a API da Groq (Rate limits são severos na tier grátis)
+            time.sleep(4)
 
         logger.info(f"Consolidando novas avaliações no histórico Global...")
         
-        auditorias_antigas = []
-        os.makedirs("resultados", exist_ok=True)
-        
-        if os.path.exists(self.ARQUIVO_AUDITORIA_GLOBAL):
-            try:
-                with open(self.ARQUIVO_AUDITORIA_GLOBAL, "r", encoding="utf-8") as f:
-                    auditorias_antigas = json.load(f)
-                    if not isinstance(auditorias_antigas, list):
-                        auditorias_antigas = []
-            except Exception:
-                auditorias_antigas = []
-
         novas_avaliacoes = [av.model_dump(by_alias=True) for av in relatorio_auditoria.avaliacoes]
         lista_consolidada = auditorias_antigas + novas_avaliacoes
         
         with open(self.ARQUIVO_AUDITORIA_GLOBAL, "w", encoding="utf-8") as f:
             json.dump(lista_consolidada, f, indent=4, ensure_ascii=False)
             
-        logger.info(f"Histórico de Auditoria Global atualizado. Total de avaliações: {len(lista_consolidada)}.")
+        logger.info(f"Histórico de Auditoria Global atualizado. Total de avaliações arquivadas: {len(lista_consolidada)}.")
 
 if __name__ == "__main__":
     juiz = JuizAuditorSOC()
