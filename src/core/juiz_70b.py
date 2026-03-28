@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Descobre o caminho absoluto da pasta 'src' e força no path do Python
+caminho_src = str(Path(__file__).resolve().parent.parent)
+if caminho_src not in sys.path:
+    sys.path.insert(0, caminho_src)
+
 import os
 import json
 import logging
@@ -9,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import List, Optional
 
 # === IMPORTAÇÃO DA NOSSA ARQUITETURA ===
-from core.config import ARQUIVO_PLAYBOOK, RESULTADOS_DIR
+from config import ARQUIVO_PLAYBOOK, RESULTADOS_DIR
 
 load_dotenv()
 
@@ -26,13 +34,9 @@ class AvaliacaoIncidente(BaseModel):
     parecer_juiz: str
     timestamp_auditoria: Optional[str] = None
 
-class RelatorioAuditoria(BaseModel):
-    avaliacoes: List[AvaliacaoIncidente] = []
-
 class JuizAuditorSOC:
     def __init__(self):
         self.ARQUIVO_PLAYBOOK_GLOBAL = ARQUIVO_PLAYBOOK
-        # Usa o config.py para o caminho correto
         self.ARQUIVO_AUDITORIA_GLOBAL = RESULTADOS_DIR / "auditoria_global.json" 
         
         logger.info("Inicializando Juiz Auditor (Modelo: Llama 3.3 70B via Groq)...")
@@ -116,8 +120,10 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
 
         logger.info(f"🔍 Auditando {len(decisoes_para_auditar)} decisões NOVAS e inéditas...")
 
-        relatorio_auditoria = RelatorioAuditoria()
         timestamp_agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Preparar a lista que vai crescendo em tempo real
+        lista_consolidada = auditorias_antigas.copy()
 
         for inc in decisoes_para_auditar:
             logger.info(f"A julgar IP: {inc.get('id_alvo', 'Desconhecido')}...")
@@ -138,22 +144,24 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
                 try:
                     avaliacao = AvaliacaoIncidente.model_validate_json(resposta_juiz)
                     avaliacao.timestamp_auditoria = timestamp_agora
-                    relatorio_auditoria.avaliacoes.append(avaliacao)
+                    
+                    # === SALVAMENTO INCREMENTAL AQUI ===
+                    nova_avaliacao_dict = avaliacao.model_dump(by_alias=True)
+                    lista_consolidada.append(nova_avaliacao_dict)
+                    
+                    # Sobrescreve o arquivo imediatamente com a lista atualizada
+                    with open(self.ARQUIVO_AUDITORIA_GLOBAL, "w", encoding="utf-8") as f:
+                        json.dump(lista_consolidada, f, indent=4, ensure_ascii=False)
+                        
+                    logger.info(f"✅ IP {inc.get('id_alvo', '')} avaliado e salvo no arquivo!")
+                    
                 except ValidationError as e:
                     logger.error(f"Juiz gerou JSON inválido: {e}")
             
-            # Pausa estendida para a API da Groq (Rate limits são severos na tier grátis)
+            # Pausa estendida para a API da Groq
             time.sleep(4)
 
-        logger.info(f"Consolidando novas avaliações no histórico Global...")
-        
-        novas_avaliacoes = [av.model_dump(by_alias=True) for av in relatorio_auditoria.avaliacoes]
-        lista_consolidada = auditorias_antigas + novas_avaliacoes
-        
-        with open(self.ARQUIVO_AUDITORIA_GLOBAL, "w", encoding="utf-8") as f:
-            json.dump(lista_consolidada, f, indent=4, ensure_ascii=False)
-            
-        logger.info(f"Histórico de Auditoria Global atualizado. Total de avaliações arquivadas: {len(lista_consolidada)}.")
+        logger.info(f"Fim da auditoria! Total de avaliações no arquivo: {len(lista_consolidada)}.")
 
 if __name__ == "__main__":
     juiz = JuizAuditorSOC()

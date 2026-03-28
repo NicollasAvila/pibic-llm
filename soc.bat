@@ -43,8 +43,7 @@ goto menu
 echo.
 echo Iniciando o servidor web do Dashboard...
 cd src
-streamlit run app_dashboard.py
-cd ..
+python -m streamlit run d:/pibic-llm/src/app_dashboard.py
 goto menu
 
 :juiz

@@ -19,13 +19,15 @@ logger = logging.getLogger("AgenteSOC")
 # =====================================================================
 # A ordem das chaves aqui em baixo é o segredo do Chain-of-Thought (CoT)
 class Incidente(BaseModel):
-    id_alvo: str = Field(description="O IP de origem do atacante.")
-    padrao_ataque: str = Field(description="Os dados extraídos do firewall.")
-    dica_rag: str = Field(description="A regra da base de conhecimento.")
-    analise_contexto: str = Field(default="", description="PASSO 1: Pense em voz alta. Analise o tempo e o espaço da ameaça.")
-    justificativa: str = Field(default="", description="PASSO 2: Crie uma justificativa técnica curta baseada na análise.")
-    veredito: str = Field(default="", description="PASSO 3: Apenas 'BLOQUEAR', 'FALSO_POSITIVO' ou 'MONITORAR'.")
-    nivel_confianca: str = Field(default="", description="PASSO 4: Apenas 'ALTA', 'MEDIA' ou 'BAIXA'.")
+    id_alvo: str = Field(..., description="O IP de origem do atacante.")
+    padrao_ataque: str = Field(..., description="Os dados extraídos do firewall.")
+    dica_rag: str = Field(..., description="A regra da base de conhecimento.")
+    
+    # Removido o default="". Agora o LLM é OBRIGADO a gerar essas chaves!
+    analise_contexto: str = Field(..., description="PASSO 1: Pense em voz alta. Analise o tempo e o espaço da ameaça.")
+    justificativa: str = Field(..., description="PASSO 2: Crie uma justificativa técnica curta baseada na análise.")
+    veredito: str = Field(..., description="PASSO 3: Apenas 'BLOQUEAR', 'FALSO_POSITIVO' ou 'MONITORAR'.")
+    nivel_confianca: str = Field(..., description="PASSO 4: Apenas 'ALTA', 'MEDIA' ou 'BAIXA'.")
 
 class RelatorioTriagem(BaseModel):
     incidentes: List[Incidente] = []

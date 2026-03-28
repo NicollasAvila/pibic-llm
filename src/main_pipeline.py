@@ -8,7 +8,7 @@ import threading
 import queue
 
 # === IMPORTAÇÕES DA NOSSA ARQUITETURA ===
-from core.config import (
+from  config import (
     DADOS_RAW_DIR, 
     ARQUIVO_CONTROLE, 
     TAMANHO_BLOCO_LEITURA
