@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
 from typing import List
 
+from config import ARQUIVO_PLAYBOOK, ARQUIVO_SFT, ARQUIVO_METRICAS, SLM_MODELO, OLLAMA_URL, OLLAMA_KEEP_ALIVE
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='[Camada3_Agente] %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger("AgenteSOC")
@@ -41,12 +43,13 @@ class BatchIA(BaseModel):
 # =====================================================================
 class Camada3AgenteSOC:
     def __init__(self):
-        self.ARQUIVO_PLAYBOOK = "resultados/playbook_global.json"
-        self.ARQUIVO_SFT = "resultados/fine_tuning_dataset.jsonl"
-        self.ARQUIVO_METRICAS = "resultados/metricas_desempenho.json"
+        self.ARQUIVO_PLAYBOOK = str(ARQUIVO_PLAYBOOK)
+        self.ARQUIVO_SFT = str(ARQUIVO_SFT)
+        self.ARQUIVO_METRICAS = str(ARQUIVO_METRICAS)
         
-        self.MODELO = "llama3.2" 
-        self.OLLAMA_URL = "http://localhost:11434/api/generate"
+        self.MODELO = SLM_MODELO 
+        self.OLLAMA_URL = OLLAMA_URL
+        self.OLLAMA_KEEP_ALIVE = OLLAMA_KEEP_ALIVE
         self.cache_decisoes = {} 
 
     def _consultar_ia_batch(self, lista_incidentes):
@@ -76,7 +79,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
             "prompt": prompt_completo,
             "stream": False,
             "format": schema_json_rigido,  # MÁGICA 2: O modelo fica travado neste Schema. Zero alucinações.
-            "keep_alive": "15m",
+            "keep_alive": self.OLLAMA_KEEP_ALIVE,
             "options": {
                 "temperature": 0.0, # Temperatura 0 para ser um robô determinístico
                 "num_predict": 1500 # Aumentado para suportar o texto da analise_contexto

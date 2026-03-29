@@ -8,12 +8,29 @@ from pathlib import Path
 
 st.set_page_config(page_title="SOC AI - Sentinel Pibic", layout="wide", initial_sidebar_state="expanded")
 
-# --- LEITURA SEGURA DOS ARQUIVOS (Agnóstico ao Sistema Operacional) ---
-BASE_DIR = Path(__file__).resolve().parent.parent
-RESULTADOS_DIR = BASE_DIR / "resultados"
+# --- LEITURA SEGURA DOS ARQUIVOS E A/B TESTING ---
+from config import RESULTADOS_DIR_ROOT, ARQUIVO_BLACKLIST, ARQUIVO_WATCHLIST
+
+# 1. Encontrar todos os modelos (subpastas) disponíveis
+try:
+    modelos_disponiveis = [d.name for d in RESULTADOS_DIR_ROOT.iterdir() if d.is_dir()]
+except FileNotFoundError:
+    modelos_disponiveis = []
+
+if not modelos_disponiveis:
+    modelos_disponiveis = ["llama3.2"] # Fallback
+
+st.sidebar.header("🧪 Configurações do Experimento (A/B Test)")
+modelo_selecionado = st.sidebar.selectbox(
+    "Selecione o Modelo para Análise:", 
+    sorted(modelos_disponiveis, reverse=True)
+)
+
+# 2. Apontar o diretório de leitura restrito para o modelo escolhido!
+RESULTADOS_DIR_DINAMICO = RESULTADOS_DIR_ROOT / modelo_selecionado
 
 def carregar_json(nome_arquivo):
-    caminho = RESULTADOS_DIR / nome_arquivo
+    caminho = RESULTADOS_DIR_DINAMICO / nome_arquivo
     if caminho.exists():
         try:
             with open(caminho, "r", encoding="utf-8") as f:
@@ -22,24 +39,25 @@ def carregar_json(nome_arquivo):
             return None
     return None
 
-def ler_linhas_arquivo(nome_arquivo):
-    caminho = RESULTADOS_DIR / nome_arquivo
+def ler_linhas_arquivo(caminho):
     if caminho.exists():
         with open(caminho, "r", encoding="utf-8") as f:
             return f.readlines()
     return []
 
-# Carregamento de Dados em Tempo Real
+# Carregamento de Dados em Tempo Real (Isolados na gaveta do modelo)
 dados_playbook = carregar_json("playbook_global.json")
 dados_memoria = carregar_json("memoria_global_ips.json")
 dados_juiz = carregar_json("auditoria_global.json")
 dados_metricas = carregar_json("metricas_desempenho.json")
-linhas_blacklist = ler_linhas_arquivo("blacklist_firewall.txt")
-linhas_watchlist = ler_linhas_arquivo("watchlist_siem.txt")
+
+# AS Listas de Borda (SIEM e Firewall) continuam sendo globais
+linhas_blacklist = ler_linhas_arquivo(ARQUIVO_BLACKLIST)
+linhas_watchlist = ler_linhas_arquivo(ARQUIVO_WATCHLIST)
 
 # --- CABEÇALHO E TÍTULO ---
 st.title("🛡️ Centro de Operações de Segurança Autônomo (SOC 24/7)")
-st.markdown("**Pesquisa PIBIC:** Arquitetura Assíncrona com IA na Borda (Edge SLM), RAG Semântico e Triagem Espaço-Temporal")
+st.markdown(f"**Pesquisa PIBIC:** Arquitetura Assíncrona com IA na Borda, RAG e Triagem | 🧠 **Modelo Avaliado:** `{modelo_selecionado}`")
 st.divider()
 
 # --- PREPARAÇÃO DE DADOS PRINCIPAIS ---
@@ -103,8 +121,18 @@ with tab1:
             filtros = st.multiselect("Filtrar por Veredito Estratégico:", options=df_playbook['veredito'].unique(), default=df_playbook['veredito'].unique())
             df_filtrado = df_playbook[df_playbook['veredito'].isin(filtros)]
             
-            colunas_exibicao = ['id_alvo', 'veredito', 'veio_do_cache', 'analise_contexto', 'justificativa', 'dica_rag']
+            colunas_exibicao = ['id_alvo', 'veredito', 'is_red_team', 'veio_do_cache', 'analise_contexto', 'justificativa', 'dica_rag']
             colunas_reais = [c for c in colunas_exibicao if c in df_filtrado.columns]
+            
+            # SIDEBAR: Eficácia do Teste Duplo-Cego do Red Team
+            if 'is_red_team' in df_playbook.columns:
+                df_red = df_playbook[df_playbook['is_red_team'] == True]
+                df_red_blocked = df_red[df_red['veredito'] == 'BLOQUEAR']
+                if not df_red.empty:
+                    taxa = (len(df_red_blocked) / len(df_red)) * 100
+                    st.sidebar.divider()
+                    st.sidebar.metric(f"🎯 Red Team True Positives", f"{taxa:.1f}%", f"{len(df_red_blocked)}/{len(df_red)} ataques bloqueados")
+                    st.sidebar.caption("Eficácia da IA frente às anomalias cegas do Red Team escondidas no pipeline.")
             
             # Utilizando data_editor para permitir leitura longa sem cortes e design moderno
             st.data_editor(
@@ -112,6 +140,7 @@ with tab1:
                 column_config={
                     "id_alvo": st.column_config.TextColumn("IP / Alvo", width="small"),
                     "veredito": st.column_config.TextColumn("Ação Final", width="small"),
+                    "is_red_team": st.column_config.CheckboxColumn("Alerta Falso?", width="small"),
                     "veio_do_cache": st.column_config.TextColumn("Cache", width="small"),
                     "analise_contexto": st.column_config.TextColumn("Cadeia de Pensamento (CoT)", width="large"),
                     "justificativa": st.column_config.TextColumn("Justificativa Oficial", width="medium"),

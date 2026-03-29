@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import List
 
+from config import ARQUIVO_MEMORIA, HORAS_TTL_MEMORIA
+
 logger = logging.getLogger("Camada1_Triagem")
 
 # === MODELOS DE DADOS (PYDANTIC) ===
@@ -32,12 +34,12 @@ class PerfilIP:
 
 class TriagemEspacoTemporal:
     def __init__(self):
-        self.ARQUIVO_MEMORIA = "resultados/memoria_global_ips.json"
+        self.ARQUIVO_MEMORIA = str(ARQUIVO_MEMORIA)
         self.grafo_global = defaultdict(PerfilIP)
         
         # Variáveis de Controle 24/7
         self.lotes_processados = 0 
-        self.HORAS_TTL = 2  # Tempo para o Coletor de Lixo apagar IPs inativos
+        self.HORAS_TTL = HORAS_TTL_MEMORIA  # Puxado do Config Dinâmico
         
         # =================================================================
         # 🚀 OTIMIZAÇÃO: COMPILAÇÃO PRÉVIA DE REGEX E MÉTRICAS DLP (PIBIC)
