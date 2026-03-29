@@ -33,6 +33,7 @@ fila_incidentes = queue.Queue()
 
 # === REGEX PRÉ-COMPILADO PARA MÁXIMA VELOCIDADE ===
 RE_DROP_FIREWALL = re.compile(r'action=(drop|deny|reset\-.*)', re.IGNORECASE)
+RE_BUSCA_IP = re.compile(r'src_ip=([^\s]+)')
 
 def carregar_controle():
     padrao = {"arquivo_atual": "", "linha_atual": 0, "lotes_processados": 0}
@@ -50,8 +51,8 @@ def salvar_controle(controle):
         json.dump(controle, f, indent=4)
 
 # === O CONSUMIDOR DA GPU (Camada 3) ===
-def worker_ia(agente):
-    logger.info("🤖 [Thread IA] Consumidor iniciado. Aguardando anomalias na fila...")
+def worker_ia(agente, borda_blacklist):
+    logger.info("🤖 [Thread IA] Consumidor iniciado. Roteamento IPC ativado...")
     while True:
         item = fila_incidentes.get()
         if item is None: 
@@ -60,7 +61,8 @@ def worker_ia(agente):
         relatorio, num_lote, metricas_lote = item
         
         # A IA processa no tempo dela (Batching + Cache + CoT), sem travar a leitura
-        agente.executar_mcp_salvar_lote(relatorio, num_lote=num_lote, metricas_lote=metricas_lote)
+        # Puxa a referência viva da blacklist para auto-alimentar o IPS!
+        agente.executar_mcp_salvar_lote(relatorio, num_lote=num_lote, metricas_lote=metricas_lote, borda_blacklist=borda_blacklist)
         
         logger.info(f"✅ [Thread IA] Lote {num_lote} finalizado e salvo no Playbook!")
         fila_incidentes.task_done()
@@ -72,9 +74,13 @@ def executar_pipeline():
     tradutor = TradutorSemanticoRAG()
     agente = Camada3AgenteSOC()
     triagem = TriagemEspacoTemporal()
+    
+    # === MEMÓRIA COMPARTILHADA (MÁGICA DO ZERO I/O BOTTLENECK) ===
+    # Formato: {"1.2.3.4": 1698273645.1} (IP -> Timestamp do Ban)
+    borda_blacklist = {}
 
-    # Liga a Thread da IA em segundo plano
-    thread_ia = threading.Thread(target=worker_ia, args=(agente,), daemon=True)
+    # Liga a Thread da IA em segundo plano (Ela vai alimentar a variável acima)
+    thread_ia = threading.Thread(target=worker_ia, args=(agente, borda_blacklist), daemon=True)
     thread_ia.start()
 
     arquivos_log = sorted(glob.glob(os.path.join(DADOS_RAW_DIR, "ossec-archive-*.log")))
@@ -118,18 +124,36 @@ def executar_pipeline():
             else:
                 linhas_mistas = linhas_brutas
 
-            # 3. Filtro de Early-Drop (Ignorar o que o firewall já bloqueou, exceto o RedTeam)
+            # ==========================================================
+            # 3. FILTRO DE EARLY-DROP (E NOVO IPS ATIVO DA INTELIGÊNCIA)
+            # ==========================================================
             linhas_lote = []
             linhas_descartadas_firewall = 0
+            linhas_descartadas_ia = 0
             
+            # --- GARBAGE COLLECTOR DA BLACKLIST DA IA (TTL de 24 horas) ---
+            t_atual = time.time()
+            if controle["lotes_processados"] % 10 == 0:
+                ips_expirados = [ip for ip, ts in borda_blacklist.items() if (t_atual - ts) > 86400]
+                for ip in ips_expirados:
+                    del borda_blacklist[ip]
+
             for linha in linhas_mistas:
-                # Se for um DROP nativo e NÃO for do nosso Red Team, descarta
-                if RE_DROP_FIREWALL.search(linha) and "Alerta_RedTeam" not in linha:
+                m_src = RE_BUSCA_IP.search(linha)
+                src_ip = m_src.group(1) if m_src else None
+                
+                # A Borda Mágica: Corta o atacante reincidente antes de gastar GPU ou CPU!
+                if src_ip and src_ip in borda_blacklist:
+                    linhas_descartadas_ia += 1
+                    
+                # O Equipamento de Firewall Estático (Antigo):
+                elif RE_DROP_FIREWALL.search(linha) and "Alerta_RedTeam" not in linha:
                     linhas_descartadas_firewall += 1
+                    
                 else:
                     linhas_lote.append(linha)
 
-            logger.info(f"📖 [Leitor] Processando lote com {len(linhas_lote)} conexões válidas... [{linhas_descartadas_firewall} drops nativos ignorados]")
+            logger.info(f"📖 [Leitor] Processando lote com {len(linhas_lote)} conexões suspeitas... [🔥 {linhas_descartadas_ia} Cortadas pela IA | 🛡️ {linhas_descartadas_firewall} Antigas de FW]")
             
             # 4. Envia para a Camada 1 (Triagem Espaço-Temporal)
             t0_c1 = time.perf_counter()
@@ -153,7 +177,8 @@ def executar_pipeline():
                     "tempo_c1_seg": tempo_c1,
                     "tempo_c2_seg": tempo_c2,
                     "linhas_lidas": total_lidas,
-                    "drops_firewall": linhas_descartadas_firewall
+                    "drops_firewall": linhas_descartadas_firewall,
+                    "drops_ia_ativo": linhas_descartadas_ia # NOVA TELEMETRIA DA DEFESA ATIVA!
                 }
                 
                 # Joga para a fila e volta imediatamente a ler o log!

@@ -67,7 +67,6 @@ decisoes_em_cache = 0
 if dados_playbook:
     df_playbook = pd.DataFrame(dados_playbook)
     if 'justificativa' in df_playbook.columns:
-        # Verifica se o veredito foi poupado pela GPU e lido diretamente do Cache de Threat Intel
         df_playbook['veio_do_cache'] = df_playbook['justificativa'].apply(
             lambda x: "Sim" if isinstance(x, str) and "CACHE" in x else "Não"
         )
@@ -75,12 +74,18 @@ if dados_playbook:
 
 df_metrics = pd.DataFrame(dados_metricas) if dados_metricas else pd.DataFrame()
 tps_medio = df_metrics.get('tps', pd.Series([0])).mean() if not df_metrics.empty else 0.0
-drops_totais = len(linhas_blacklist) + (df_metrics.get('drops_firewall', pd.Series([0])).sum() if not df_metrics.empty else 0)
+
+drops_fw_nativo = int(df_metrics.get('drops_firewall', pd.Series([0])).sum()) if not df_metrics.empty else 0
+drops_ia_ativo = int(df_metrics.get('drops_ia_ativo', pd.Series([0])).sum()) if not df_metrics.empty else 0
+drops_totais = drops_fw_nativo + drops_ia_ativo
 
 # --- KPIS TOP LEVEL ---
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌐 Perfis Mapeados na RAM", len(dados_memoria) if dados_memoria else 0)
-col2.metric("🛑 Conexões Rejeitadas (Borda)", drops_totais)
+
+# Métrica Composta do Novo IPS (A/B Test)
+col2.metric("🛑 Conexões Rejeitadas (Borda)", drops_totais, f"{drops_ia_ativo} cortadas pela IA", delta_color="normal")
+
 col3.metric("♻️ Decisões em Cache (GPU Livre)", decisoes_em_cache)
 col4.metric("⚡ Velocidade do Motor SLM", f"{tps_medio:.1f} TPS" if tps_medio > 0 else "Aguardando...")
 st.markdown("<br>", unsafe_allow_html=True)
@@ -206,20 +211,20 @@ with tab2:
 # ABA 3: FRONTEIRA E FIREWALL
 # ==========================================
 with tab3:
-    st.subheader("Mitigação Antecipada e Observabilidade")
+    st.subheader("Mitigação Ativa e Firewall Dinâmico (IPS)")
+    st.markdown("A partir da implementação IPS, a Inteligência Artificial gerencia o Firewall em malha fechada. IPs condenados geram Early-Drops instantâneos via Hashmap O(1).")
     c_fw1, c_fw2 = st.columns(2)
     with c_fw1:
-        st.error("💣 Endereços IP em Blacklist (Early-Drops do L4)")
+        st.error(f"💣 Invasores Isolados pela IA (Blacklist Dinâmica) - {len(linhas_blacklist)} Ativos no TTL")
         if linhas_blacklist:
-            for linha in reversed(linhas_blacklist[-15:]): st.code(linha.strip(), language="bash")
+            for linha in reversed(linhas_blacklist[-25:]): st.code(linha.strip(), language="bash")
         else:
-            st.info("Sem isolamentos críticos registrados nos componentes.")
+            st.info("Nenhuma IP inserido no purgatório ainda pelo LLM.")
     with c_fw2:
-        st.warning("🔭 Lista de Observação Prioritária (SIEM)")
-        if linhas_watchlist:
-            for linha in reversed(linhas_watchlist[-15:]): st.code(linha.strip(), language="bash")
-        else:
-            st.info("Sem varreduras registradas na malha de atenção.")
+        st.warning(f"🔭 Relatórios de Carga Total - Early-Drops")
+        st.metric("Descartes Nativos (Assinatura L4)", drops_fw_nativo)
+        st.metric("Descartes Inteligentes (Cérebro L7)", drops_ia_ativo)
+        st.info("A Defesa Ativa poupou a arquitetura de reprocessar todas essas requisições criminosas acima.")
 
 # ==========================================
 # ABA 4: DESEMPENHO E TELEMETRIA (PIBIC)

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
 from typing import List
 
-from config import ARQUIVO_PLAYBOOK, ARQUIVO_SFT, ARQUIVO_METRICAS, SLM_MODELO, OLLAMA_URL, OLLAMA_KEEP_ALIVE
+from config import ARQUIVO_PLAYBOOK, ARQUIVO_SFT, ARQUIVO_METRICAS, SLM_MODELO, OLLAMA_URL, OLLAMA_KEEP_ALIVE, ARQUIVO_BLACKLIST
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='[Camada3_Agente] %(message)s', datefmt='%H:%M:%S')
@@ -46,6 +46,7 @@ class Camada3AgenteSOC:
         self.ARQUIVO_PLAYBOOK = str(ARQUIVO_PLAYBOOK)
         self.ARQUIVO_SFT = str(ARQUIVO_SFT)
         self.ARQUIVO_METRICAS = str(ARQUIVO_METRICAS)
+        self.ARQUIVO_BLACKLIST = str(ARQUIVO_BLACKLIST)
         
         self.MODELO = SLM_MODELO 
         self.OLLAMA_URL = OLLAMA_URL
@@ -113,7 +114,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 
         return '{"avaliacoes": []}', prompt_sistema, prompt_usuario, {}
 
-    def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1, metricas_lote=None):
+    def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1, metricas_lote=None, borda_blacklist=None):
         relatorio_processado = RelatorioTriagem()
         dados_sft = []
         
@@ -131,6 +132,9 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
         # 1. TRIAGEM PELO CACHE SEMÂNTICO (AGORA CORRIGIDO)
         # ==========================================================
         for inc in relatorio_triagem_input.incidentes:
+            
+            # 💡 Garante a rastreabilidade do Red Team tanto para IA Inédita quanto pro Cache!
+            mapa_is_red_team[inc.id_alvo] = inc.is_red_team
             
             # CORREÇÃO DO BUG: Remove a contagem mutável de eventos da assinatura!
             padrao_limpo = re.sub(r'EVENTOS TOTAIS HOJE: \d+ \| ', '', inc.padrao_ataque)
@@ -152,7 +156,6 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 }
                 incidentes_para_ia.append(inc_dict)
                 mapa_hashes[inc.id_alvo] = hash_inc 
-                mapa_is_red_team[inc.id_alvo] = inc.is_red_team
                 metricas_lote["cache_misses"] += 1
 
         # ==========================================================
@@ -182,9 +185,6 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                         self.cache_decisoes[hash_deste_incidente] = inc_decidido.model_dump_json()
 
                     inc_decidido.justificativa += f" (Por {self.MODELO.upper()})"
-                    
-                    # Reaplica o status oculto do Red Team gravado na Triagem
-                    inc_decidido.is_red_team = mapa_is_red_team.get(inc_decidido.id_alvo, False)
                     relatorio_processado.incidentes.append(inc_decidido)
                 
                 # Salva no dataset de treino SFT
@@ -210,8 +210,23 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 except json.JSONDecodeError:
                     pass
                 
+        novas_decisoes = []
+        for i in relatorio_processado.incidentes:
+            d = i.model_dump()
+            # 🕵️ Injeção cirúrgica do Teste Duplo-Cego FORA do modelo restrito
+            d["is_red_team"] = mapa_is_red_team.get(i.id_alvo, False)
+            novas_decisoes.append(d)
+            
+            # 🛡️ DEFESA ATIVA (IPS) - Se a IA mandar Bloquear, nós isolamos a rede instantaneamente!
+            if d.get("veredito") == "BLOQUEAR":
+                if borda_blacklist is not None and i.id_alvo not in borda_blacklist:
+                    borda_blacklist[i.id_alvo] = time.time()
+                    # Persiste assincronamente no background para sobreviver a reboots
+                    with open(self.ARQUIVO_BLACKLIST, "a", encoding="utf-8") as bf:
+                        bf.write(f"{i.id_alvo}\n")
+                
         with open(self.ARQUIVO_PLAYBOOK, "w", encoding="utf-8") as f:
-            json.dump(decisoes_antigas + [i.model_dump() for i in relatorio_processado.incidentes], f, indent=4)
+            json.dump(decisoes_antigas + novas_decisoes, f, indent=4)
             
         if dados_sft: 
             with open(self.ARQUIVO_SFT, "a", encoding="utf-8") as f:
