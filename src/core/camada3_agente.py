@@ -136,8 +136,12 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
             # 💡 Garante a rastreabilidade do Red Team tanto para IA Inédita quanto pro Cache!
             mapa_is_red_team[inc.id_alvo] = inc.is_red_team
             
-            # CORREÇÃO DO BUG: Remove a contagem mutável de eventos da assinatura!
+            # CORREÇÃO DEFINITIVA DO CACHE (Evita o colapso de playbooks falsos-positivos)
+            # Removemos TODO E QUALQUER número que varia por lote da chave!
             padrao_limpo = re.sub(r'EVENTOS TOTAIS HOJE: \d+ \| ', '', inc.padrao_ataque)
+            padrao_limpo = re.sub(r'Taxa atual de [\d.]+ ev/s\.', 'Taxa atual de X ev/s.', padrao_limpo)
+            padrao_limpo = re.sub(r'Upload de [\d.]+ Megabytes', 'Upload de X Megabytes', padrao_limpo)
+            padrao_limpo = re.sub(r'tocou \d+ IPs', 'tocou X IPs', padrao_limpo)
             
             assinatura = f"{padrao_limpo}|{inc.dica_rag}".encode('utf-8')
             hash_inc = hashlib.md5(assinatura).hexdigest()
@@ -202,14 +206,9 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
         # ==========================================================
         # 3. SALVAR RESULTADOS
         # ==========================================================
-        decisoes_antigas = []
-        if os.path.exists(self.ARQUIVO_PLAYBOOK):
-            with open(self.ARQUIVO_PLAYBOOK, "r", encoding="utf-8") as f:
-                try:
-                    decisoes_antigas = json.load(f)
-                except json.JSONDecodeError:
-                    pass
-                
+        # ⏱️ TELEMETRIA OTIMIZADA: Relógio de I/O do Disco vs Relógio da IA
+        t0_io = time.time()
+        
         novas_decisoes = []
         for i in relatorio_processado.incidentes:
             d = i.model_dump()
@@ -225,28 +224,29 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                     with open(self.ARQUIVO_BLACKLIST, "a", encoding="utf-8") as bf:
                         bf.write(f"{i.id_alvo}\n")
                 
-        with open(self.ARQUIVO_PLAYBOOK, "w", encoding="utf-8") as f:
-            json.dump(decisoes_antigas + novas_decisoes, f, indent=4)
+        # ESCALABILIDADE O(1): Usar JSONL puramente assíncrono para o Dashboard!
+        if novas_decisoes:
+            with open(self.ARQUIVO_PLAYBOOK, "a", encoding="utf-8") as f:
+                for d in novas_decisoes:
+                    f.write(json.dumps(d, ensure_ascii=False) + "\n")
             
         if dados_sft: 
             with open(self.ARQUIVO_SFT, "a", encoding="utf-8") as f:
                 f.writelines(dados_sft)
                 
-        # 4. SALVAR MÉTRICAS
-        metricas_antigas = []
-        if os.path.exists(self.ARQUIVO_METRICAS):
-            with open(self.ARQUIVO_METRICAS, "r", encoding="utf-8") as f:
-                try:
-                    metricas_antigas = json.load(f)
-                except json.JSONDecodeError:
-                    pass
-                    
+        # ==========================================================
+        # 4. SALVAR MÉTRICAS (MÓDULO FLUIDO DE TELEMETRIA)
+        # ==========================================================
+        tempo_io = round(time.time() - t0_io, 4)
+        
         metricas_lote["lote"] = num_lote
         metricas_lote["timestamp"] = datetime.now().isoformat()
+        metricas_lote["tempo_io_disco"] = tempo_io
+        
         if metricas_lote.get("eval_duration", 0) > 0:
             metricas_lote["tps"] = round(metricas_lote.get("eval_count", 0) / metricas_lote["eval_duration"], 2)
         else:
             metricas_lote["tps"] = 0.0
             
-        with open(self.ARQUIVO_METRICAS, "w", encoding="utf-8") as f:
-            json.dump(metricas_antigas + [metricas_lote], f, indent=4)
+        with open(self.ARQUIVO_METRICAS, "a", encoding="utf-8") as f:
+            f.write(json.dumps(metricas_lote, ensure_ascii=False) + "\n")

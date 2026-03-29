@@ -39,17 +39,29 @@ def carregar_json(nome_arquivo):
             return None
     return None
 
+def carregar_jsonl(nome_arquivo):
+    caminho = RESULTADOS_DIR_DINAMICO / nome_arquivo
+    dados = []
+    if caminho.exists():
+        with open(caminho, "r", encoding="utf-8") as f:
+            for linha in f:
+                linha = linha.strip()
+                if linha:
+                    try: dados.append(json.loads(linha))
+                    except: pass
+    return dados if dados else None
+
 def ler_linhas_arquivo(caminho):
     if caminho.exists():
         with open(caminho, "r", encoding="utf-8") as f:
             return f.readlines()
     return []
 
-# Carregamento de Dados em Tempo Real (Isolados na gaveta do modelo)
-dados_playbook = carregar_json("playbook_global.json")
+# Carregamento de Dados em Tempo Real (Isolados na gaveta do modelo com tolerância a falhas O(1))
+dados_playbook = carregar_jsonl("playbook_global.jsonl")
 dados_memoria = carregar_json("memoria_global_ips.json")
-dados_juiz = carregar_json("auditoria_global.json")
-dados_metricas = carregar_json("metricas_desempenho.json")
+dados_juiz = carregar_jsonl("auditoria_global.jsonl")
+dados_metricas = carregar_jsonl("metricas_desempenho.jsonl")
 
 # AS Listas de Borda (SIEM e Firewall) continuam sendo globais
 linhas_blacklist = ler_linhas_arquivo(ARQUIVO_BLACKLIST)
@@ -244,7 +256,19 @@ with tab4:
                 st.plotly_chart(fig_tempos, use_container_width=True)
                 
         with col_graf2:
-            if "total_duration" in df_metrics.columns:
+            if "total_duration" in df_metrics.columns and "tempo_io_disco" in df_metrics.columns:
+                df_llm = pd.DataFrame({
+                    "Lote Processado": df_metrics["lote"],
+                    "Inteligência SLM/GPU (s)": df_metrics["total_duration"],
+                    "Gargalo SSD/RAM (s)": df_metrics["tempo_io_disco"]
+                }).melt(id_vars=["Lote Processado"], var_name="Métrica Física", value_name="Tempo (Segundos)")
+                
+                fig_llm = px.area(df_llm, x="Lote Processado", y="Tempo (Segundos)", color="Métrica Física", 
+                                  title="Gargalo de I/O vs Processamento Neural (Impacto Real)", markers=True)
+                # Cores contrastantes (Vermelho pro Gargalo, Verde pra IA)
+                fig_llm.update_traces(mode="lines+markers")
+                st.plotly_chart(fig_llm, use_container_width=True)
+            elif "total_duration" in df_metrics.columns:
                 fig_llm = px.area(df_metrics, x="lote", y="total_duration", title="Custo de Carga da GPU (Camada 3) por Lote (Segundos)", markers=True)
                 fig_llm.update_traces(line_color="#43a047", fillcolor="rgba(67, 160, 71, 0.4)")
                 st.plotly_chart(fig_llm, use_container_width=True)

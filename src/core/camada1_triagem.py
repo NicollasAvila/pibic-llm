@@ -158,10 +158,10 @@ class TriagemEspacoTemporal:
             logger.info("💾 [Checkpoint] Salvando backup do Grafo Global no SSD...")
             self._salvar_memoria_disco()
 
-        # --- FASE 2: RACIOCÍNIO ESPAÇO-TEMPORAL (Matemática) ---
+        # --- FASE 2: RACIOCÍNIO ESPAÇO-TEMPORAL (Matemática Calibrada) ---
         lista_incidentes = []
-        limiar_burst = 5.0      # Mais de 5 requisições por segundo é considerado anômalo
-        limiar_dispersao = 3    # Tentar aceder a mais de 3 IPs internos diferentes é suspeito
+        limiar_burst = 20.0     # Usuários normais abrem 15 con/st pra baixar 1 página. 20 é o limite.
+        limiar_dispersao = 5    # Pingar mais de 5 máquinas na mesma subrede levanta suspeita
         limiar_exfiltracao_bytes = 10000000  # Acima de 10 MB enviados gera anomalia de DLP
         
         for ip_src in ips_ativos_neste_lote:

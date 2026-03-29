@@ -28,12 +28,12 @@ RESULTADOS_DIR_ROOT = BASE_DIR / "resultados"
 RESULTADOS_DIR = RESULTADOS_DIR_ROOT / SLM_MODELO
 
 # Arquivos de Estado e Persistência Específicos do Modelo (Não se misturam!)
-ARQUIVO_PLAYBOOK = RESULTADOS_DIR / "playbook_global.json"
+ARQUIVO_PLAYBOOK = RESULTADOS_DIR / "playbook_global.jsonl"
 ARQUIVO_SFT = RESULTADOS_DIR / "fine_tuning_dataset.jsonl"
 ARQUIVO_MEMORIA = RESULTADOS_DIR / "memoria_global_ips.json"
 ARQUIVO_CONTROLE = RESULTADOS_DIR / "controle_leitura.json"
-ARQUIVO_METRICAS = RESULTADOS_DIR / "metricas_desempenho.json"
-ARQUIVO_AUDITORIA = RESULTADOS_DIR / "auditoria_global.json"
+ARQUIVO_METRICAS = RESULTADOS_DIR / "metricas_desempenho.jsonl"
+ARQUIVO_AUDITORIA = RESULTADOS_DIR / "auditoria_global.jsonl"
 
 # Listas Globais de Borda (Manuais/Compartilhadas)
 ARQUIVO_BLACKLIST = RESULTADOS_DIR_ROOT / "blacklist_firewall.txt"
