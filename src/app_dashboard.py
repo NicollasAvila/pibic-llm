@@ -31,6 +31,7 @@ def ler_linhas_arquivo(nome_arquivo):
 dados_playbook = carregar_json("playbook_global.json")
 dados_memoria = carregar_json("memoria_global_ips.json")
 dados_juiz = carregar_json("auditoria_global.json")
+dados_metricas = carregar_json("metricas_desempenho.json")
 linhas_blacklist = ler_linhas_arquivo("blacklist_firewall.txt")
 linhas_watchlist = ler_linhas_arquivo("watchlist_siem.txt")
 
@@ -61,7 +62,7 @@ col4.metric("Motor de Inferência Ativo", "Llama 3.2 (3B) - Local")
 st.markdown("<br>", unsafe_allow_html=True)
 
 # --- ABAS ---
-tab1, tab2, tab3, tab4 = st.tabs(["[ Playbook de Decisões ]", "[ Memória Comportamental ]", "[ Atuação na Borda ]", "[ Auditoria da IA ]"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["[ Playbook de Decisões ]", "[ Memória Comportamental ]", "[ Atuação na Borda ]", "[ Auditoria da IA ]", "[ Desempenho e Custos ]"])
 
 with tab1:
     st.subheader("Histórico Global de Decisões (Chain-of-Thought)")
@@ -157,3 +158,42 @@ with tab4:
             st.divider()
     else:
         st.info("Nenhuma avaliação encontrada. Rode o Juiz em nuvem para gerar as métricas.")
+
+with tab5:
+    st.subheader("Telemetria e Custos de Inferência")
+    if dados_metricas:
+        df_metrics = pd.DataFrame(dados_metricas)
+        
+        # Resumo Superior
+        tokens_totais = df_metrics.get("eval_count", pd.Series([0])).sum() + df_metrics.get("prompt_eval_count", pd.Series([0])).sum()
+        cache_hits_totais = df_metrics.get("cache_hits", pd.Series([0])).sum()
+        
+        cm1, cm2, cm3, cm4 = st.columns(4)
+        cm1.metric("Total de Tokens", f"{tokens_totais:,}".replace(",", "."))
+        cm2.metric("Tokens Gerados/Lote", f"{df_metrics.get('eval_count', pd.Series([0])).mean():.0f}")
+        cm3.metric("TPS Médio (Tokens/s)", f"{df_metrics.get('tps', pd.Series([0])).mean():.2f}")
+        cm4.metric("Ameaças Recicladas do Cache", cache_hits_totais)
+        
+        st.divider()
+        
+        col_graf1, col_graf2 = st.columns(2)
+        with col_graf1:
+            if "tempo_c1_seg" in df_metrics.columns and "tempo_c2_seg" in df_metrics.columns:
+                df_tempos = pd.DataFrame({
+                    "Lote": df_metrics["lote"],
+                    "Tempo Triagem (C1)": df_metrics["tempo_c1_seg"] * 1000,
+                    "Tempo RAG (C2)": df_metrics["tempo_c2_seg"] * 1000
+                }).melt(id_vars=["Lote"], var_name="Camada", value_name="Tempo (ms)")
+                fig_tempos = px.line(df_tempos, x="Lote", y="Tempo (ms)", color="Camada", title="Latência das Camadas 1 e 2 (ms)", markers=True)
+                st.plotly_chart(fig_tempos, use_container_width=True)
+                
+        with col_graf2:
+            if "total_duration" in df_metrics.columns:
+                fig_llm = px.area(df_metrics, x="lote", y="total_duration", title="Tempo de Inferência da IA por Lote (Segundos)", markers=True)
+                fig_llm.update_traces(line_color="#ff4b4b", fillcolor="rgba(255, 75, 75, 0.3)")
+                st.plotly_chart(fig_llm, use_container_width=True)
+                
+        if "drops_firewall" in df_metrics.columns:
+            st.markdown(f"**Rejeição na Borda (Early-Drop):** Um total de **{df_metrics['drops_firewall'].sum()} conexões** já barradas pelo firewall foram descartadas na Camada 1 antes da análise.")
+    else:
+        st.info("O módulo de coleta de métricas ainda não registou dados. Inicie o fluxo (Camada 1).")

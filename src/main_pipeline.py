@@ -57,10 +57,10 @@ def worker_ia(agente):
         if item is None: 
             break 
         
-        relatorio, num_lote = item
+        relatorio, num_lote, metricas_lote = item
         
         # A IA processa no tempo dela (Batching + Cache + CoT), sem travar a leitura
-        agente.executar_mcp_salvar_lote(relatorio, num_lote=num_lote)
+        agente.executar_mcp_salvar_lote(relatorio, num_lote=num_lote, metricas_lote=metricas_lote)
         
         logger.info(f"✅ [Thread IA] Lote {num_lote} finalizado e salvo no Playbook!")
         fila_incidentes.task_done()
@@ -132,19 +132,32 @@ def executar_pipeline():
             logger.info(f"📖 [Leitor] Processando lote com {len(linhas_lote)} conexões válidas... [{linhas_descartadas_firewall} drops nativos ignorados]")
             
             # 4. Envia para a Camada 1 (Triagem Espaço-Temporal)
+            t0_c1 = time.perf_counter()
             relatorio = triagem.processar_bloco(linhas_lote)
+            t1_c1 = time.perf_counter()
+            tempo_c1 = t1_c1 - t0_c1
             
             if len(relatorio.incidentes) > 0:
                 logger.warning(f"🚨 [Triagem] {len(relatorio.incidentes)} anomalias detectadas! Enviando para a Fila da GPU.")
                 
                 # Camada 2: Enriquece com o RAG antes de ir para a fila
+                t0_c2 = time.perf_counter()
                 for inc in relatorio.incidentes:
                     inc.dica_rag = tradutor.buscar_contexto(inc.padrao_ataque)
+                t1_c2 = time.perf_counter()
+                tempo_c2 = t1_c2 - t0_c2
 
                 controle["lotes_processados"] += 1
                 
+                metricas_lote = {
+                    "tempo_c1_seg": tempo_c1,
+                    "tempo_c2_seg": tempo_c2,
+                    "linhas_lidas": total_lidas,
+                    "drops_firewall": linhas_descartadas_firewall
+                }
+                
                 # Joga para a fila e volta imediatamente a ler o log!
-                fila_incidentes.put((relatorio, controle["lotes_processados"]))
+                fila_incidentes.put((relatorio, controle["lotes_processados"], metricas_lote))
             else:
                 logger.info("✅ [Triagem] Tráfego normal.")
 

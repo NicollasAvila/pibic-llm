@@ -43,6 +43,7 @@ class Camada3AgenteSOC:
     def __init__(self):
         self.ARQUIVO_PLAYBOOK = "resultados/playbook_global.json"
         self.ARQUIVO_SFT = "resultados/fine_tuning_dataset.jsonl"
+        self.ARQUIVO_METRICAS = "resultados/metricas_desempenho.json"
         
         self.MODELO = "llama3.2" 
         self.OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -91,7 +92,13 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 resposta.raise_for_status()
                 
                 dados_json = resposta.json()
-                return dados_json.get('response', '{}'), prompt_sistema, prompt_usuario
+                metricas_ia = {
+                    "total_duration": dados_json.get("total_duration", 0) / 1e9,
+                    "prompt_eval_count": dados_json.get("prompt_eval_count", 0),
+                    "eval_count": dados_json.get("eval_count", 0),
+                    "eval_duration": dados_json.get("eval_duration", 0) / 1e9
+                }
+                return dados_json.get('response', '{}'), prompt_sistema, prompt_usuario, metricas_ia
                 
             except requests.exceptions.RequestException as e:
                 tentativas += 1
@@ -101,14 +108,20 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 tentativas += 1
                 time.sleep(2)
                 
-        return '{"avaliacoes": []}', prompt_sistema, prompt_usuario
+        return '{"avaliacoes": []}', prompt_sistema, prompt_usuario, {}
 
-    def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1):
+    def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1, metricas_lote=None):
         relatorio_processado = RelatorioTriagem()
         dados_sft = []
         
         incidentes_para_ia = []
         mapa_hashes = {}
+        
+        if metricas_lote is None:
+            metricas_lote = {}
+        metricas_lote["total_incidentes"] = len(relatorio_triagem_input.incidentes)
+        metricas_lote["cache_hits"] = 0
+        metricas_lote["cache_misses"] = 0
 
         # ==========================================================
         # 1. TRIAGEM PELO CACHE SEMÂNTICO (AGORA CORRIGIDO)
@@ -126,6 +139,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 inc_cache = Incidente.model_validate_json(self.cache_decisoes[hash_inc])
                 inc_cache.justificativa = "[CACHE] " + inc_cache.justificativa 
                 relatorio_processado.incidentes.append(inc_cache)
+                metricas_lote["cache_hits"] += 1
             else:
                 inc_dict = {
                     "id_alvo": inc.id_alvo,
@@ -134,6 +148,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 }
                 incidentes_para_ia.append(inc_dict)
                 mapa_hashes[inc.id_alvo] = hash_inc 
+                metricas_lote["cache_misses"] += 1
 
         # ==========================================================
         # 2. INFERÊNCIA EM LOTE E CHAIN-OF-THOUGHT
@@ -144,7 +159,10 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
             chunk = incidentes_para_ia[i:i + TAMANHO_LOTE]
             logger.info(f"🧠 [BATCH CoT] Raciocinando sobre {len(chunk)} ameaças inéditas simultaneamente...")
             
-            resposta_ia_str, prompt_sistema, prompt_usuario = self._consultar_ia_batch(chunk)
+            resposta_ia_str, prompt_sistema, prompt_usuario, metricas_ia = self._consultar_ia_batch(chunk)
+            
+            for k, v in metricas_ia.items():
+                metricas_lote[k] = metricas_lote.get(k, 0) + v
             
             try:
                 json_parseado = json.loads(resposta_ia_str)
@@ -190,3 +208,22 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
         if dados_sft: 
             with open(self.ARQUIVO_SFT, "a", encoding="utf-8") as f:
                 f.writelines(dados_sft)
+                
+        # 4. SALVAR MÉTRICAS
+        metricas_antigas = []
+        if os.path.exists(self.ARQUIVO_METRICAS):
+            with open(self.ARQUIVO_METRICAS, "r", encoding="utf-8") as f:
+                try:
+                    metricas_antigas = json.load(f)
+                except json.JSONDecodeError:
+                    pass
+                    
+        metricas_lote["lote"] = num_lote
+        metricas_lote["timestamp"] = datetime.now().isoformat()
+        if metricas_lote.get("eval_duration", 0) > 0:
+            metricas_lote["tps"] = round(metricas_lote.get("eval_count", 0) / metricas_lote["eval_duration"], 2)
+        else:
+            metricas_lote["tps"] = 0.0
+            
+        with open(self.ARQUIVO_METRICAS, "w", encoding="utf-8") as f:
+            json.dump(metricas_antigas + [metricas_lote], f, indent=4)

@@ -19,6 +19,7 @@ ARQUIVO_PLAYBOOK = RESULTADOS_DIR / "playbook_global.json"
 ARQUIVO_SFT = RESULTADOS_DIR / "fine_tuning_dataset.jsonl"
 ARQUIVO_MEMORIA = RESULTADOS_DIR / "memoria_global_ips.json"
 ARQUIVO_CONTROLE = RESULTADOS_DIR / "controle_leitura.json"
+ARQUIVO_METRICAS = RESULTADOS_DIR / "metricas_desempenho.json"
 
 # =====================================================================
 # 🧠 2. MOTOR DO AGENTE IA (Ollama REST API)
