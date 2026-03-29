@@ -17,6 +17,7 @@ class Incidente(BaseModel):
     veredito: str = ""       
     justificativa: str = ""
     nivel_confianca: str = ""
+    is_red_team: bool = False
 
 class RelatorioTriagem(BaseModel):
     incidentes: List[Incidente] = []
@@ -39,7 +40,7 @@ class TriagemEspacoTemporal:
         self.HORAS_TTL = 2  # Tempo para o Coletor de Lixo apagar IPs inativos
         
         # =================================================================
-        # 🚀 OTIMIZAÇÃO: COMPILAÇÃO PRÉVIA DE REGEX (Poupa o CPU drasticamente)
+        # 🚀 OTIMIZAÇÃO: COMPILAÇÃO PRÉVIA DE REGEX E MÉTRICAS DLP (PIBIC)
         # =================================================================
         self.RE_TIME = re.compile(r'generated_time="([^"]+)"')
         self.RE_SRC  = re.compile(r'src_ip=([^\s]+)')
@@ -49,6 +50,7 @@ class TriagemEspacoTemporal:
         self.RE_LOC  = re.compile(r'source_location="?([^"\s,]+(?:\s[^"\s,]+)*)"?')
         self.RE_APP  = re.compile(r'application=([^\s]+)')
         self.RE_RULE = re.compile(r'rule_name=([^\s]+)')
+        self.RE_BYT  = re.compile(r'(?:bytes_sent|bytes|sent)=(\d+)')
 
     def processar_bloco(self, lote_linhas: list) -> RelatorioTriagem:
         """Ponto de entrada chamado pelo Orquestrador."""
@@ -63,6 +65,10 @@ class TriagemEspacoTemporal:
         locais_ip = {}
         apps_ip = defaultdict(set)
         regras_ip = defaultdict(set)
+        
+        # Ocultamento Seguro (Blind Test) do Red Team e Controle de Volume de Dados
+        red_team_ips = set()
+        bytes_enviados_ip = defaultdict(int)
         
         # MEMÓRIA DE CURTO PRAZO: Contagem exclusiva deste bloco (Sliding Window)
         eventos_no_lote = defaultdict(int)
@@ -106,10 +112,22 @@ class TriagemEspacoTemporal:
             match_loc = self.RE_LOC.search(linha)
             match_app = self.RE_APP.search(linha)
             match_rule = self.RE_RULE.search(linha)
+            match_byt = self.RE_BYT.search(linha)
             
             if match_loc: locais_ip[src] = match_loc.group(1)
             if match_app: apps_ip[src].add(match_app.group(1))
-            if match_rule: regras_ip[src].add(match_rule.group(1))
+            if match_byt: bytes_enviados_ip[src] += int(match_byt.group(1))
+            
+            if match_rule:
+                regra_str = match_rule.group(1)
+                
+                # TESTE DUPLO CEGO (PIBIC)
+                # O Pipeline burla o Drop porque viu a tag Alerta_RedTeam.
+                # Agora, nós MARCAMOS que é um IP fake, mas NUNCA EXPOMOS isso nas regras pro LLM ler!
+                if regra_str == "Alerta_RedTeam":
+                    red_team_ips.add(src)
+                else:
+                    regras_ip[src].add(regra_str)
             
             if src not in tempo_inicial_lote or tempo_obj < tempo_inicial_lote[src]:
                 tempo_inicial_lote[src] = tempo_obj
@@ -142,7 +160,8 @@ class TriagemEspacoTemporal:
         lista_incidentes = []
         limiar_burst = 5.0      # Mais de 5 requisições por segundo é considerado anômalo
         limiar_dispersao = 3    # Tentar aceder a mais de 3 IPs internos diferentes é suspeito
-
+        limiar_exfiltracao_bytes = 10000000  # Acima de 10 MB enviados gera anomalia de DLP
+        
         for ip_src in ips_ativos_neste_lote:
             perfil = self.grafo_global[ip_src]
             
@@ -151,9 +170,10 @@ class TriagemEspacoTemporal:
             taxa_atual = eventos_no_lote[ip_src] / delta_t
             
             qtd_alvos_espaciais = len(perfil.alvos_dst)
+            total_bytes = bytes_enviados_ip[ip_src]
             
-            # Filtro Matemático Base: Se for tráfego lento e direcionado, ignora.
-            if taxa_atual <= limiar_burst and qtd_alvos_espaciais <= limiar_dispersao:
+            # Filtro Matemático Base: Se for tráfego lento e direcionado e pequeno volume, ignora.
+            if taxa_atual <= limiar_burst and qtd_alvos_espaciais <= limiar_dispersao and total_bytes < limiar_exfiltracao_bytes:
                 continue
 
             # Construção das Strings de Contexto para o LLM
@@ -162,27 +182,33 @@ class TriagemEspacoTemporal:
             else:
                 char_temporal = f"[TEMPO NORMAL] Frequência baixa neste instante."
 
-            if qtd_alvos_espaciais > 1:
-                char_espacial = f"[DISPERSÃO] Este IP já escaneou {qtd_alvos_espaciais} IPs hoje."
+            if qtd_alvos_espaciais >= limiar_dispersao:
+                char_espacial = f"[DISPERSÃO ALTA] Este IP já escaneou ou tocou {qtd_alvos_espaciais} IPs internos lateralmente."
             else:
-                char_espacial = f"[FOCADO] Tráfego direcionado a um alvo."
+                char_espacial = f"[FOCADO] Tráfego direcionado a um alvo quase que exclusivamente."
+                
+            char_volume = ""
+            if total_bytes >= limiar_exfiltracao_bytes:
+                mb_enviado = total_bytes / (1024*1024)
+                char_volume = f" | [⚠️ DLP ALERTA] Detectado pico anômalo de Upload de {mb_enviado:.1f} Megabytes transferidos para fora!"
 
             local = locais_ip.get(ip_src, "Desconhecido")
             apps = ", ".join(list(apps_ip[ip_src])[:2]) if apps_ip[ip_src] else "N/A"
-            regras = ", ".join(list(regras_ip[ip_src])[:2]) if regras_ip[ip_src] else "N/A"
+            regras = ", ".join(list(regras_ip[ip_src])[:2]) if regras_ip[ip_src] else "Variaveis"
             porta_principal = max(perfil.portas_alvo, key=perfil.portas_alvo.get) if perfil.portas_alvo else "N/A"
             
-            # Geração do Prompt Denso
+            # Geração do Prompt Denso SEm POLUIR COM DADOS FACCIONADOS (Blind Test)
             st_align_texto = (
                 f"ST-ALIGN | ORIGEM: {ip_src} ({local}) | EVENTOS TOTAIS HOJE: {perfil.total_eventos} | "
-                f"ESPAÇO: {char_espacial} | TEMPO: {char_temporal} | "
-                f"FIREWALL: Regras [{regras}], App [{apps}]. ALVO: Porta {porta_principal}."
+                f"ESPAÇO: {char_espacial} | TEMPO: {char_temporal}{char_volume} | "
+                f"FIREWALL: Regras [{regras}], App [{apps}]. ALVO CENTRAL: Porta {porta_principal}."
             )
             
-            # Monta o objeto Pydantic (Ainda sem a dica do RAG e Veredito)
+            # Monta o objeto Pydantic com o rastro cego (is_red_team) 
             incidente = Incidente(
                 id_alvo=ip_src,
-                padrao_ataque=st_align_texto
+                padrao_ataque=st_align_texto,
+                is_red_team=(ip_src in red_team_ips)
             )
             lista_incidentes.append(incidente)
             

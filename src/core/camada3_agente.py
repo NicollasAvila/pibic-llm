@@ -116,6 +116,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
         
         incidentes_para_ia = []
         mapa_hashes = {}
+        mapa_is_red_team = {}  # MATRIZ DE RASTREabilidade CEGA DO RED TEAM
         
         if metricas_lote is None:
             metricas_lote = {}
@@ -148,6 +149,7 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 }
                 incidentes_para_ia.append(inc_dict)
                 mapa_hashes[inc.id_alvo] = hash_inc 
+                mapa_is_red_team[inc.id_alvo] = inc.is_red_team
                 metricas_lote["cache_misses"] += 1
 
         # ==========================================================
@@ -177,6 +179,9 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                         self.cache_decisoes[hash_deste_incidente] = inc_decidido.model_dump_json()
 
                     inc_decidido.justificativa += f" (Por {self.MODELO.upper()})"
+                    
+                    # Reaplica o status oculto do Red Team gravado na Triagem
+                    inc_decidido.is_red_team = mapa_is_red_team.get(inc_decidido.id_alvo, False)
                     relatorio_processado.incidentes.append(inc_decidido)
                 
                 # Salva no dataset de treino SFT
