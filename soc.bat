@@ -50,7 +50,7 @@ goto menu
 echo.
 echo Iniciando LLM-as-a-Judge para avaliar as decisoes...
 :: Ajuste o caminho abaixo se o seu juiz_70b.py estiver noutra pasta
-python src\core\juiz_70b.py
+python D:\pibic-llm\src\core\juiz_70b.py
 echo.
 pause
 goto menu

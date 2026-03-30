@@ -90,8 +90,20 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
             logger.error("Playbook Global não encontrado. Execute o orquestrador primeiro.")
             return
 
+        # === LEITURA OTIMIZADA DE JSONL (JSON Lines) ===
+        todas_decisoes = []
         with open(self.ARQUIVO_PLAYBOOK_GLOBAL, "r", encoding="utf-8") as f:
-            todas_decisoes = json.load(f)
+            for linha in f:
+                linha = linha.strip()
+                if not linha:  # Ignora linhas em branco
+                    continue
+                try:
+                    # Carrega cada linha como um JSON independente
+                    incidente = json.loads(linha)
+                    todas_decisoes.append(incidente)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Ignorando linha malformada no JSONL: {e}")
+        # ===============================================
             
         logger.info(f"Total de {len(todas_decisoes)} decisões acumuladas no Playbook.")
 
