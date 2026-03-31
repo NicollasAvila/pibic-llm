@@ -60,7 +60,7 @@ def ler_linhas_arquivo(caminho):
 # Carregamento de Dados em Tempo Real (Isolados na gaveta do modelo com tolerância a falhas O(1))
 dados_playbook = carregar_jsonl("playbook_global.jsonl")
 dados_memoria = carregar_json("memoria_global_ips.json")
-dados_juiz = carregar_jsonl("auditoria_global.jsonl")
+dados_juiz = carregar_json("auditoria_global.json")
 dados_metricas = carregar_jsonl("metricas_desempenho.jsonl")
 
 # AS Listas de Borda (SIEM e Firewall) continuam sendo globais
