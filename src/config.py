@@ -12,7 +12,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 # NOME DO MODELO DO EXPERIMENTO ATUAL (A/B Testing Isolado)
 # Por padrão é 'llama3.2', mas você pode colocar 'meu_modelo_finetuned' aqui ou no .env
-SLM_MODELO = os.getenv("SLM_MODELO", "llama3.2")
+SLM_MODELO = os.getenv("SLM_MODELO", "llama-3-8b-instruct-cybersecurity.Q4_K_M")
 
 # =====================================================================
 # 📂 2. MAPEAMENTO DE DIRETÓRIOS E ARQUIVOS (Single Source of Truth)

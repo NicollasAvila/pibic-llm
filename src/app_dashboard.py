@@ -304,13 +304,13 @@ with tab4:
 with tab5:
     st.subheader("Crivo Empírico e Validação Rigorosa (LLM-as-a-Judge)")
     
-    with st.expander("📖 As OITO (8) Diretrizes de Julgamento", expanded=False):
+    with st.expander("📖 Os QUATRO (4) Quesitos de Julgamento", expanded=False):
         st.markdown("""
-        **Como a IA Avaliadora penaliza ou corrobora as decisões do nosso Motor Principal (Llama 3.2):**
-        1. 🔬 **Fidelidade Factual (Factual Fidelity):** Verifica se a Camada 3 extraiu os IPs e as portas corretamente do log bruto, sem adicionar contextos inexistentes ou ignorar evidências claras. Pune pesadamente alucinações matemáticas da LLM.
-        2. 🧠 **Raciocínio Lógico (Logical Reasoning):** Analisa a *Chain-of-Thought* (A coluna *Cadeia de Pensamento*). A SLM articulou de forma irrefutável o motivo temporal ou espacial antes de entregar o veredito? Ela pulou conclusões lógicas sobre a real ameaça mitigada?
-        3. 🎯 **Acurácia da Decisão (Decision Accuracy):** O veredito (Bloqueio vs Monitoramento vs Falso Positivo) reflete apropriadamente o risco calculado? Tráfego legal de usuários de rede deve gerar *FALSO_POSITIVO* e malwares óbvios merecem *BLOQUEAR* baseado puramente nos dados em mãos.
-        4. 🛡️ **Adesão à Instrução (Instruction Adherence):** Avalia se a IA se atrelou às saídas de formatação Pydantic, seguindo as diretrizes Sistêmicas (System Prompts). Modelos indisciplinados respondem amigavelmente e quebram as APIs JSON. Nota alta representa formatação estrita como determinista de máquina.
+        **Como a IA Avaliadora (Nemotron 120B) penaliza ou corrobora as decisões da nossa SLM (Camada 3):**
+        1. 🔬 **Fidelidade Factual:** Verifica se a IA extraiu os IPs, volumes de MBs e portas corretamente do log bruto. Pune pesadamente alucinações (como inventar uma DMZ que não existe).
+        2. 🧠 **Qualidade de Raciocínio:** Analisa a profundidade da *Cadeia de Pensamento (CoT)*. A SLM cruzou tempo, espaço e volume antes de entregar o veredito? Ela justificou o contexto adequadamente?
+        3. 🎯 **Acurácia da Decisão:** O veredito reflete apropriadamente o risco? Pune a IA se ela seguiu o RAG cegamente num caso óbvio de exfiltração de dados, recompensando a inteligência analítica.
+        4. 🛡️ **Adesão à Instrução:** Avalia a obediência às restrições do prompt. Modelos indisciplinados deixam campos em branco ou quebram a formatação JSON exigida pelo sistema.
         """)
         
     if dados_juiz:
@@ -325,8 +325,9 @@ with tab5:
             media_rac = df_aud['qualidade_raciocinio'].mean() if 'qualidade_raciocinio' in df_aud else 0
             media_ade = df_aud['adesao_instrucao'].mean() if 'adesao_instrucao' in df_aud else 0
             
+            # NOMES ATUALIZADOS AQUI PARA O GRÁFICO DE RADAR
             df_radar = pd.DataFrame({
-                'Métrica de Estresse': ['Fidelidade Factual', 'Acurácia Final', 'Raciocínio CoT', 'Adesão Sistêmica'],
+                'Métrica de Estresse': ['Fidelidade Factual', 'Acurácia da Decisão', 'Qualidade de Raciocínio', 'Adesão à Instrução'],
                 'Desempenho (0-10)': [media_fid, media_acu, media_rac, media_ade]
             })
             
@@ -353,7 +354,7 @@ with tab5:
         st.divider()
         st.subheader("Auditorias Minuciosas Recentes")
         for av in reversed(dados_juiz[-5:]):
-            alvo = av.get('ip', 'N/A')
+            alvo = av.get('id_alvo', av.get('ip', 'N/A'))
             nota = av.get('acuracia_decisao', 0)
             
             if nota >= 8: st_col = "🟢"

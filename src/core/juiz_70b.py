@@ -53,64 +53,77 @@ class JuizAuditorSOC:
         self.cliente = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
+            max_retries=0,
         )
         
         # 4. ESCOLHA O MODELO NO PADRÃO DO OPENROUTER (Ex: Llama 3.3 70B)
         self.modelo = "nvidia/nemotron-3-super-120b-a12b:free" 
 
     def _consultar_juiz(self, prompt_usuario):
-        prompt_sistema = """Você é um Auditor Sênior de Segurança da Informação nível Tier 3 (Threat Hunter).
+        prompt_sistema = """"Você é um Auditor Sênior de Segurança da Informação nível Tier 3 (Threat Hunter).
 Sua função é auditar as decisões de um Analista SOC Nível 1 (IA Menor).
-Você é EXTREMAMENTE CRÍTICO, CÉTICO E RIGOROSO. O padrão ouro (Nota 10) é quase inatingível e reservado apenas para análises completas, profundas e técnicas.
+Você é EXTREMAMENTE CRÍTICO, CÉTICO E RIGOROSO. O padrão ouro (Nota 10) é quase inatingível.
 
 [MÉTODO DE PONTUAÇÃO - REGIME DE DEDUÇÃO]
 Comece com a nota 10 em cada critério e DEDUZA pontos impiedosamente conforme a régua abaixo:
 
 1. qualidade_raciocinio:
-   - Nota 10: Análise profunda. Relaciona IPs, portas, tempo, espaço e cruza com a regra RAG de forma técnica.
-   - Nota 6: Análise rasa, genérica ou preguiçosa ("O tráfego é normal e a porta é de navegação"). -> DEDUZA 4 PONTOS IMEDIATAMENTE.
-   - Nota 3: Usa apenas respostas curtas, repetitivas ou não explica o contexto do DLP/Upload.
+   - Nota 10: Análise profunda. Relaciona IPs, portas, tempo, espaço e cruza com a regra RAG. Se discordou do RAG, apresentou provas irrefutáveis baseadas nos dados.
+   - Nota 6: Análise rasa ou genérica ("O tráfego é normal"). -> DEDUZA 4 PONTOS IMEDIATAMENTE.
+   - Nota 3: Respostas curtas, repetitivas ou ignora dados críticos (ex: picos de Upload).
 
 2. fidelidade_factual:
-   - Nota 10: Usa os dados exatos do log bruto sem inventar nada.
-   - Nota 5: Omite dados cruciais do log na justificativa (Ex: Ignora um pico de Upload de 100MB). -> DEDUZA 5 PONTOS.
-   - Nota 0: Inventa dados, portas ou alucina regras não enviadas.
+   - Nota 10: Usa os dados exatos do log bruto.
+   - Nota 5: Omite dados cruciais do log na justificativa. -> DEDUZA 5 PONTOS.
+   - Nota 0: Inventa zonas (ex: DMZ3 inexistente), IPs, ou dados que não estão no log.
 
 3. acuracia_decisao:
-   - Nota 10: Veredito exato e perfeitamente alinhado à instrução do RAG.
-   - Nota 0: Errou a decisão final (Ex: RAG pediu Bloquear e a IA deu Falso Positivo).
+   - Nota 10: Seguiu o RAG corretamente em cenários normais, OU discordou do RAG de forma brilhante porque o log mostrava uma anomalia grave (ex: exfiltração óbvia).
+   - Nota 0: Seguiu o RAG cegamente quando o log gritava o contrário (Falso Negativo), OU discordou do RAG sem nenhuma prova real (Falso Positivo).
 
 4. adesao_instrucao:
-   - Nota 10: Respeitou todas as regras de formatação e restrições absolutas do sistema.
-   - Nota 5: Deixou campos em branco desnecessariamente ou gerou justificativas mal formatadas.
-   - Nota 0: Quebrou a estrutura esperada.
+   - Nota 10: Respeitou toda a formatação JSON exigida.
+   - Nota 5: Deixou campos em branco.
 
 Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
 {
     "ip": "<escreva o IP aqui>",
     "decisao": "<escreva a decisão tomada aqui>",
-    "parecer_juiz": "<PASSO 1: Pense em voz alta. Escreva uma crítica ácida apontando o que faltou de aprofundamento técnico na análise menor.>",
+    "parecer_juiz": "<PASSO 1: Pense em voz alta. Escreva uma crítica ácida apontando o que faltou na análise menor.>",
     "fidelidade_factual": 10,
     "acuracia_decisao": 10,
-    "qualidade_raciocinio": 6,
+    "qualidade_raciocinio": 10,
     "adesao_instrucao": 10
 }
 """
-        try:
-            # 5. A SINTAXE DE CHAMADA FICA IDÊNTICA!
-            chat_completion = self.cliente.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": prompt_sistema},
-                    {"role": "user", "content": prompt_usuario}
-                ],
-                model=self.modelo,
-                temperature=0.0,
-                response_format={"type": "json_object"}
-            )
-            return chat_completion.choices[0].message.content
-        except Exception as e:
-            logger.error(f"Erro ao consultar OpenRouter (Juiz): {e}")
-            return None
+        max_tentativas = 5
+        for tentativa in range(max_tentativas):
+            try:
+                # O max_retries=0 desliga a retentativa afobada da biblioteca da OpenAI
+                chat_completion = self.cliente.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": prompt_usuario}
+                    ],
+                    model=self.modelo,
+                    temperature=0.0,
+                    response_format={"type": "json_object"}
+                )
+                return chat_completion.choices[0].message.content
+                
+            except Exception as e:
+                erro_str = str(e).lower()
+                # Se for erro de limite 429, aplicamos a estratégia de backoff
+                if "429" in erro_str or "rate limit" in erro_str:
+                    tempo_espera = 20 * (tentativa + 1) # Espera 20s, depois 40s, depois 60s...
+                    logger.warning(f"⏳ OpenRouter pediu calma (Rate Limit). Dormindo por {tempo_espera}s... (Tentativa {tentativa+1}/{max_tentativas})")
+                    time.sleep(tempo_espera)
+                else:
+                    logger.error(f"❌ Erro fatal ao consultar OpenRouter (Juiz): {e}")
+                    return None
+                    
+        logger.error("🛑 Falha no Juiz após múltiplas tentativas de contornar o Rate Limit.")
+        return None
 
     def executar_auditoria_acumulada(self):
         logger.info(f"=== [JUIZ] INICIANDO AUDITORIA NO LIVRO-RAZÃO GLOBAL ===")

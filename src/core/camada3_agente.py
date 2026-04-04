@@ -54,19 +54,26 @@ class Camada3AgenteSOC:
         self.cache_decisoes = {} 
 
     def _consultar_ia_batch(self, lista_incidentes):
-        prompt_sistema = """Você é um Analista de SOC Sênior. Sua tarefa é avaliar incidentes usando a Cadeia de Pensamento.
+        prompt_sistema = """Você é um Analista de SOC Sênior. Sua tarefa é avaliar incidentes de rede usando a Cadeia de Pensamento.
 
-[REGRAS DE DECISÃO ABSOLUTAS]
-1. Se o RAG disser FALSO POSITIVO, o veredito é FALSO_POSITIVO.
-2. Se o RAG disser CRÍTICO/ALTO, o veredito é BLOQUEAR.
-3. Se o RAG mandar MONITORAR, o veredito é MONITORAR.
-4. Baseie-se EXCLUSIVAMENTE nos dados. NUNCA invente fatos.
+[COMO VOCÊ SERÁ AVALIADO (MÉTRICAS DE AUDITORIA)]
+Suas respostas passarão por uma auditoria rigorosa. Para tirar nota máxima, você DEVE focar nestes 4 quesitos:
+1. Qualidade de Raciocínio: NUNCA dê respostas genéricas. Você deve cruzar IP, Porta, Tempo, Espaço e as regras de Firewall.
+2. Fidelidade Factual: Você é OBRIGADO a citar os números exatos do log (Ex: Megabytes de upload transferidos, quantidade de eventos, portas alvo).
+3. Acurácia da Decisão: A lógica da sua justificativa não pode contradizer a decisão tomada.
+4. Adesão à Instrução: O Veredito final deve ser a palavra exata solicitada (FALSO_POSITIVO, BLOQUEAR ou MONITORAR) e a formatação JSONL deve ser impecável.
+
+[REGRAS DE DECISÃO E USO DO RAG]
+1. O RAG atua como seu conselheiro principal (Playbook Histórico), mas ELE NÃO É INFALÍVEL.
+2. Você DEVE validar se os dados brutos do log realmente confirmam a hipótese do RAG.
+3. Se os dados baterem perfeitamente com a dica do RAG, siga o veredito dele com 'nivel_confianca' ALTA.
+4. CLÁUSULA DE EXCEÇÃO: Se houver uma contradição gritante (Ex: O RAG diz que é um crawler benigno, mas o log mostra 500MB de upload para um IP suspeito e movimentação lateral), você DEVE ignorar o RAG, mudar o veredito para INVESTIGAR ou BLOQUEAR, e colocar a confiança como MÉDIA ou BAIXA.
 
 [CADEIA DE PENSAMENTO OBRIGATÓRIA]
 Para cada incidente, você deve gerar os dados nesta EXATA ordem:
-1. 'analise_contexto': Pense sobre o que está acontecendo (Ex: "O tráfego é normal e a porta 80 é típica de navegação.")
-2. 'justificativa': Resuma a sua análise.
-3. 'veredito': Dê a sentença.
+1. 'analise_contexto': Descreva os dados técnicos. (Ex: "O log indica 344 eventos focados na porta 80 com origem na zona DMZ3. O DLP detectou um upload anômalo de 119.1 MB. Apesar da anomalia de volume, a regra do SIPROS e a dica do RAG confirmam tratar-se de um web-crawler benigno mapeado.")
+2. 'justificativa': Resuma a sua análise e os dados cruzados.
+3. 'veredito': Dê a sentença exata.
 4. 'nivel_confianca': Dê a confiança (Sempre ALTA se seguir o RAG)."""
 
         prompt_usuario = json.dumps(lista_incidentes, ensure_ascii=False, indent=2)
