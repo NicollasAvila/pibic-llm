@@ -19,11 +19,11 @@ from core.camada3_agente import Camada3AgenteSOC
 
 # Importe o seu script do Red Team (Ajuste o caminho 'tools.' se o arquivo estiver noutra pasta)
 try:
-    from red_team_em_memoria import injetar_ataque_no_lote
+    from core.simulador_red_team import injetar_ataque_no_lote
     RED_TEAM_ATIVO = True
-except ImportError:
+except ImportError as e:
     RED_TEAM_ATIVO = False
-    print("[Aviso] Script red_team_em_memoria.py não encontrado. Executando sem simulação de ataques.")
+    print(f"[Aviso] Erro ao carregar Red Team: {e}. Executando sem simulação de ataques.")
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger("Orquestrador_SOC")

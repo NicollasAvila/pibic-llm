@@ -76,50 +76,54 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
 3. 'veredito': Dê a sentença exata.
 4. 'nivel_confianca': Dê a confiança (Sempre ALTA se seguir o RAG)."""
 
-        prompt_usuario = json.dumps(lista_incidentes, ensure_ascii=False, indent=2)
-        prompt_completo = f"{prompt_sistema}\n\nAnalise estes incidentes e retorne o JSON estrito:\n{prompt_usuario}"
+        prompt_usuario_json = json.dumps(lista_incidentes, ensure_ascii=False, indent=2)
+        
+        prompt_usuario = f"""Abaixo está um Lote de {len(lista_incidentes)} IPs que entraram no seu radar neste segundo.
+Retorne um ÚNICO objeto JSON respondendo a todos eles, OBRIGATORIAMENTE contendo a chave root "avaliacoes".
 
-        # MÁGICA 1: Extrai o schema JSON do Pydantic para o Ollama
-        schema_json_rigido = BatchIA.model_json_schema()
-
-        payload = {
-            "model": self.MODELO,
-            "prompt": prompt_completo,
-            "stream": False,
-            "format": schema_json_rigido,  # MÁGICA 2: O modelo fica travado neste Schema. Zero alucinações.
-            "keep_alive": self.OLLAMA_KEEP_ALIVE,
-            "options": {
-                "temperature": 0.0, # Temperatura 0 para ser um robô determinístico
-                "num_predict": 1500 # Aumentado para suportar o texto da analise_contexto
-            }
-        }
+INCIDENTES EM REDE:
+{prompt_usuario_json}
+"""
 
         tentativas = 0
         max_tentativas = 3
-        
         while tentativas < max_tentativas:
             try:
-                resposta = requests.post(self.OLLAMA_URL, json=payload, timeout=180)
-                resposta.raise_for_status()
+                from groq import Groq
+                import os
                 
-                dados_json = resposta.json()
+                # INJEÇÃO GROQ: Burla a placa de vídeo local processando na Nuvem
+                cliente = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+                
+                t0_groq = time.time()
+                resposta = cliente.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": prompt_usuario}
+                    ],
+                    model="llama-3.1-8b-instant",  # Inferência Instantânea!
+                    temperature=0.0,
+                    response_format={"type": "json_object"}
+                )
+                
+                texto_resposta = resposta.choices[0].message.content
+                t_total = time.time() - t0_groq
+                
                 metricas_ia = {
-                    "total_duration": dados_json.get("total_duration", 0) / 1e9,
-                    "prompt_eval_count": dados_json.get("prompt_eval_count", 0),
-                    "eval_count": dados_json.get("eval_count", 0),
-                    "eval_duration": dados_json.get("eval_duration", 0) / 1e9
+                    "total_duration": t_total,
+                    "prompt_eval_count": 0,
+                    "eval_count": len(lista_incidentes),
+                    "eval_duration": t_total
                 }
-                return dados_json.get('response', '{}'), prompt_sistema, prompt_usuario, metricas_ia
                 
-            except requests.exceptions.RequestException as e:
+                return texto_resposta, prompt_sistema, prompt_usuario_json, metricas_ia
+                
+            except Exception as e:
                 tentativas += 1
-                logger.error(f"Falha de rede (Ollama): {e}. Tentativa {tentativas}...")
-                time.sleep(2)
-            except json.JSONDecodeError:
-                tentativas += 1
+                logger.error(f"Falha na Groq API: {e}. Tentativa {tentativas}...")
                 time.sleep(2)
                 
-        return '{"avaliacoes": []}', prompt_sistema, prompt_usuario, {}
+        return '{"avaliacoes": []}', prompt_sistema, prompt_usuario_json, {}
 
     def executar_mcp_salvar_lote(self, relatorio_triagem_input, num_lote=1, metricas_lote=None, borda_blacklist=None):
         relatorio_processado = RelatorioTriagem()
@@ -187,7 +191,17 @@ Para cada incidente, você deve gerar os dados nesta EXATA ordem:
                 json_parseado = json.loads(resposta_ia_str)
                 lista_avaliacoes = json_parseado.get("avaliacoes", [])
                 
+                # Dicionário rápido pra recuperar o q a IA cortou pra poupar token
+                mapa_reconstrucao = {inc_dict["id_alvo"]: inc_dict for inc_dict in chunk}
+                
                 for avaliacao in lista_avaliacoes:
+                    ip_recebido = avaliacao.get("id_alvo")
+                    input_original = mapa_reconstrucao.get(ip_recebido, {})
+                    
+                    # Re-injeta os dados temporais para não quebrar o Pydantic Validador
+                    avaliacao.setdefault("padrao_ataque", input_original.get("padrao_ataque", "N/A"))
+                    avaliacao.setdefault("dica_rag", input_original.get("dica_rag", "N/A"))
+                    
                     inc_decidido = Incidente(**avaliacao)
                     
                     # Salva no Cache

@@ -176,14 +176,18 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
         for inc in decisoes_para_auditar:
             logger.info(f"A julgar IP: {inc.get('id_alvo', 'Desconhecido')}...")
             
+            gabarito_txt = "SIM, ISTO É UM ATAQUE DO RED TEAM (VERDADEIRO POSITIVO)" if inc.get('is_red_team') else "NÃO, TRÁFEGO NORMAL (FALSO POSITIVO / BENIGNO)"
             prompt_usuario = (
                 f"Audite a seguinte decisão do SLM Analista SOC:\n\n"
                 f"IP ALVO: '{inc.get('id_alvo', '')}'\n"
                 f"DADOS DO LOG BRUTO: '{inc.get('padrao_ataque', '')}'\n"
                 f"DICA RAG: '{inc.get('dica_rag', '')}'\n"
-                f"ANÁLISE DE CONTEXTO DO ANALISTA: '{inc.get('analise_contexto', 'Não informada')}'\n"
+                f"ANÁLISE DO ANALISTA: '{inc.get('analise_contexto', 'Não informada')}'\n"
                 f"DECISÃO FINAL DO ANALISTA: '{inc.get('veredito', '')}'\n\n"
-                f"Preencha o JSON com a sua avaliação."
+                f"[GABARITO SECRETO DO GESTOR DA REDE - USE PARA AVALIAR A ACURÁCIA]\n"
+                f"VERDADE ABSOLUTA DESTE LOG: {gabarito_txt}\n"
+                f"Se a Decisão Final do Analista contradiz a 'VERDADE ABSOLUTA', espanque a nota de 'acuracia_decisao' para 0. Ele OBRIGATORIAMENTE deveria ter dado um Veredito compátivel.\n\n"
+                f"Preencha o JSON estrito com a sua avaliação."
             )
             
             resposta_juiz = self._consultar_juiz(prompt_usuario)

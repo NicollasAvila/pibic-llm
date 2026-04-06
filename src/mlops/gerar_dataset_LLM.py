@@ -6,16 +6,16 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 # Configuração de Log para acompanhar o terminal
-logging.basicConfig(level=logging.INFO, format='[Fábrica_Ouro] %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.INFO, format='[Fábrica_Ouro_Batches] %(message)s', datefmt='%H:%M:%S')
 load_dotenv()
 
 class GeradorDatasetOuro:
     def __init__(self):
-        # Aponte para o arquivo que contém os logs originais capturados pelo SOC
-        self.ARQUIVO_LOGS_BRUTOS = 'C:\Projetos\pibic-llm\dados\raw\ossec-archive-13.log'
-        
-        # Onde o dataset final pronto para o Unsloth será salvo
+        # Aponte para o Playbook gerado pela Camada 3 (Incidentes extraídos), não o Log Bruto cru.
+        # Se você rodou o soc.bat recentemente sob o modelo 'llama3.2', a pasta deve ser esta:
+        self.ARQUIVO_LOGS_BRUTOS = r'C:\Projetos\pibic-llm\resultados\llama3.2\playbook_global.jsonl'
         self.ARQUIVO_SAIDA_UNSLOTH = "resultados/dataset_ouro_unsloth.jsonl"
+        self.TAMANHO_LOTE = 3 # Exatamente igual a inferência (O Pulo do Gato)
         
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
@@ -24,94 +24,110 @@ class GeradorDatasetOuro:
         self.cliente = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
-            max_retries=0, # Proteção contra Rate Limit
+            max_retries=0,
         )
         
-        # O Professor que fará as provas perfeitas
         self.modelo = "nvidia/nemotron-3-super-120b-a12b:free"
         
-        # 🔴 PROMPT DA SLM ATUALIZADO COM OS 4 QUESITOS EXATOS
-        # Este é o DNA que o Llama 3.2 vai absorver durante o treinamento
+        # 🔴 ESTE FOI O ERRO DIAGNOSTICADO: AGORA O SYSTEM PROMPT É 100% IGUAL AO DA PRODUÇÃO
         self.prompt_sistema_slm = """Você é um Analista de SOC Sênior. Sua tarefa é avaliar incidentes de rede usando a Cadeia de Pensamento.
 
-[OS 4 QUESITOS DE AVALIAÇÃO OBRIGATÓRIOS]
-1. Fidelidade Factual: Baseie-se EXCLUSIVAMENTE nos dados. NUNCA invente fatos, zonas de rede (ex: DMZ inexistente) ou IPs.
-2. Qualidade de Raciocínio: Cruze explicitamente IP, Porta, MBs transferidos e Zona real na sua Cadeia de Pensamento.
-3. Acurácia da Decisão: O RAG é seu conselheiro. Se os dados baterem com o comportamento esperado, siga-o (FALSO_POSITIVO). Se contradizerem (ex: upload gigante, exfiltração clara), você DEVE discordar e mudar o veredito (BLOQUEAR ou INVESTIGAR).
-4. Adesão à Instrução: Responda APENAS usando a estrutura JSON estrita exigida.
+[COMO VOCÊ SERÁ AVALIADO (MÉTRICAS DE AUDITORIA)]
+Suas respostas passarão por uma auditoria rigorosa. Para tirar nota máxima, você DEVE focar nestes 4 quesitos:
+1. Qualidade de Raciocínio: NUNCA dê respostas genéricas. Você deve cruzar IP, Porta, Tempo, Espaço e as regras de Firewall.
+2. Fidelidade Factual: Você é OBRIGADO a citar os números exatos do log (Ex: Megabytes de upload transferidos, quantidade de eventos, portas alvo).
+3. Acurácia da Decisão: A lógica da sua justificativa não pode contradizer a decisão tomada.
+4. Adesão à Instrução: O Veredito final deve ser a palavra exata solicitada (FALSO_POSITIVO, BLOQUEAR ou MONITORAR) e a formatação JSONL deve ser impecável.
 
-[FORMATO JSON OBRIGATÓRIO]
-{
-    "analise_contexto": "Sua cadeia de pensamento detalhada cruzando os dados e justificando a anomalia ou normalidade.",
-    "justificativa": "Resumo rápido da validação cruzada com a regra RAG.",
-    "veredito": "FALSO_POSITIVO, BLOQUEAR ou MONITORAR",
-    "nivel_confianca": "ALTA, MEDIA ou BAIXA"
-}"""
+[REGRAS DE DECISÃO E USO DO RAG]
+1. O RAG atua como seu conselheiro principal (Playbook Histórico), mas ELE NÃO É INFALÍVEL.
+2. Você DEVE validar se os dados brutos do log realmente confirmam a hipótese do RAG.
+3. Se os dados baterem perfeitamente com a dica do RAG, siga o veredito dele com 'nivel_confianca' ALTA.
+4. CLÁUSULA DE EXCEÇÃO: Se houver uma contradição gritante (Ex: O RAG diz que é um crawler benigno, mas o log mostra 500MB de upload para um IP suspeito e movimentação lateral), você DEVE ignorar o RAG, mudar o veredito para INVESTIGAR ou BLOQUEAR, e colocar a confiança como MÉDIA ou BAIXA.
 
-    def _pedir_gabarito(self, prompt_incidente):
-        # 🔴 PROMPT DO PROFESSOR (NEMOTRON)
-        # Ele é instruído a forjar respostas que tirem nota 10/10 nos 4 quesitos
-        prompt_professor = f"""Você é um Mestre em Cibersegurança forjando o Gabarito de Ouro para treinar uma IA menor no nosso SOC.
-Sua missão é ler o log abaixo e gerar a resposta JSON PERFEITA, gabaritando os 4 quesitos de auditoria.
+[CADEIA DE PENSAMENTO OBRIGATÓRIA]
+Para cada incidente, você deve gerar os dados nesta EXATA ordem:
+1. 'analise_contexto': Descreva os dados técnicos. (Ex: "O log indica 344 eventos focados na porta 80 com origem na zona DMZ3. O DLP detectou um upload anômalo de 119.1 MB. Apesar da anomalia de volume, a regra do SIPROS e a dica do RAG confirmam tratar-se de um web-crawler benigno mapeado.")
+2. 'justificativa': Resuma a sua análise e os dados cruzados.
+3. 'veredito': Dê a sentença exata.
+4. 'nivel_confianca': Dê a confiança (Sempre ALTA se seguir o RAG)."""
 
-REGRAS PARA GABARITAR (NOTA 10/10):
-1. FIDELIDADE FACTUAL: Use APENAS os dados do log. Se a zona é CHEGADA_INT, use CHEGADA_INT. Zero invenções.
-2. QUALIDADE DE RACIOCÍNIO: Cite os números na `analise_contexto`! Explique tecnicamente a porta e os Megabytes.
-3. ACURÁCIA DA DECISÃO: Valide a Dica RAG. Se o upload for gigante para um crawler benigno, discorde do RAG, explique a contradição e bloqueie.
-4. ADESÃO: Retorne estritamente o JSON esperado.
+    def _pedir_gabarito(self, prompt_incidentes_json):
+        # 🔴 PROFESSOR AGORA PEDE O JSON EM ESTRUTURA GLOBAL: "avaliacoes": []
+        prompt_professor = f"""Você é um Mestre em Cibersegurança elaborando o Gabarito Ouro para treinar uma IA menor no SOC.
+Sua missão é ler um Array (Lote) contendo {self.TAMANHO_LOTE} incidentes abaixo e gerar as respostas PERFEITAS em Batch.
 
-INCIDENTE BRUTO:
-{prompt_incidente}
+REGRAS ESTONTEANTES DE RIGOR:
+1. FIDELIDADE FACTUAL: Use APENAS os dados informados. 
+2. ACURÁCIA DA DECISÃO: Valide o RAG. Discorde e mude o veredito se houver contradição absurda (ex: anomalia enorme que o RAG diz ser normal).
+
+RETORNE EXATAMENTE NESTE FORMATO JSON ROOT e nada mais:
+{{
+  "avaliacoes": [
+      {{ "analise_contexto": "...", "justificativa": "...", "veredito": "...", "nivel_confianca": "..." }},
+      ... (repetir para todos os itens do lote da entrada)
+  ]
+}}
+
+INCIDENTES EM BATCH:
+{prompt_incidentes_json}
 """
         max_tentativas = 5
         for tentativa in range(max_tentativas):
             try:
                 resposta = self.cliente.chat.completions.create(
                     messages=[
-                        {"role": "system", "content": "Você é um gerador de datasets corporativos implacável, rigoroso e imune a alucinações."},
+                        {"role": "system", "content": "Você é um gerador de datasets implacável que só retorna JSON puro."},
                         {"role": "user", "content": prompt_professor}
                     ],
                     model=self.modelo,
-                    temperature=0.0, # Temperatura 0 para ser determinístico matemático
+                    temperature=0.0,
                     response_format={"type": "json_object"}
                 )
+                
+                if not hasattr(resposta, 'choices') or not resposta.choices:
+                    logging.warning(f"⚠️ Resposta da API Ouro veio sem 'choices' (Possível erro no upstream). Conteúdo puro: {resposta}")
+                    time.sleep(10)
+                    continue
+                    
                 return resposta.choices[0].message.content
             except Exception as e:
                 erro_str = str(e).lower()
                 if "429" in erro_str or "rate limit" in erro_str:
                     tempo = 20 * (tentativa + 1)
-                    logging.warning(f"⏳ OpenRouter Rate Limit. Dormindo {tempo}s... ({tentativa+1}/{max_tentativas})")
+                    logging.warning(f"⏳ Rate Limit. Dormindo {tempo}s... ({tentativa+1}/{max_tentativas})")
                     time.sleep(tempo)
+                elif "nonetype" in erro_str or "subscriptable" in erro_str:
+                    logging.warning(f"⚠️ Falha de estrutura na resposta (NoneType). Tentando de novo em 10s... ({tentativa+1}/{max_tentativas})")
+                    time.sleep(10)
                 else:
-                    logging.error(f"❌ Erro fatal na API: {e}")
-                    return None
+                    logging.error(f"❌ Erro na API Ouro ({e}). Tentando novamente em 5s... ({tentativa+1}/{max_tentativas})")
+                    time.sleep(5)
         return None
 
     def gerar_dataset(self):
-        import random 
+        logging.info("🔥 Iniciando a Forja de Conhecimento Roteado em Batches 🔥")
         
-        logging.info("🔥 Iniciando a Forja de Conhecimento (Nemotron 120B) 🔥")
+        TOTAL_ITENS_ALVO = 150
+        LOTE_MAXIMO = TOTAL_ITENS_ALVO // self.TAMANHO_LOTE
         
-        MAX_GABARITOS = 150
-        
-        # 🔴 1. SISTEMA ANTI-CRASH (CHECKPOINT)
-        gabaritos_prontos = 0
+        # Leitura da quantidade salva baseada em linhas jsonl (1 linha = 1 lote de 3 agora)
+        lotes_salvos = 0
         if os.path.exists(self.ARQUIVO_SAIDA_UNSLOTH):
             with open(self.ARQUIVO_SAIDA_UNSLOTH, 'r', encoding='utf-8') as f_check:
-                gabaritos_prontos = sum(1 for linha in f_check if linha.strip())
+                lotes_salvos = sum(1 for linha in f_check if linha.strip())
                 
-        restantes = MAX_GABARITOS - gabaritos_prontos
+        restantes = LOTE_MAXIMO - lotes_salvos
         
         if restantes <= 0:
-            logging.info(f"✅ O dataset já possui {gabaritos_prontos} gabaritos de Ouro. O arquivo está completo!")
+            logging.info(f"✅ Dataset completo com {lotes_salvos} lotes gigantes!")
             return
             
-        logging.info(f"🔄 Retomando progresso: {gabaritos_prontos} salvos no SSD. Faltam gerar {restantes} gabaritos.")
+        logging.info(f"🔄 Retomando: {lotes_salvos} lotes salvos. Faltam {restantes}.")
         
-        # 2. Carrega os logs brutos
         logs_totais = []
         if not os.path.exists(self.ARQUIVO_LOGS_BRUTOS):
-            logging.error(f"Arquivo não encontrado: {self.ARQUIVO_LOGS_BRUTOS}")
+            logging.error(f"Arquivo RAW não encontrado: {self.ARQUIVO_LOGS_BRUTOS}")
             return
             
         with open(self.ARQUIVO_LOGS_BRUTOS, 'r', encoding='utf-8') as f:
@@ -119,48 +135,59 @@ INCIDENTE BRUTO:
                 if linha.strip():
                     logs_totais.append(json.loads(linha.strip()))
                     
+        import random
         random.shuffle(logs_totais)
         
-        # Seleciona apenas a quantidade exata que falta para chegar em 150
-        logs_amostra = logs_totais[:restantes]
-
-        # 🔴 3. MODO 'a' (APPEND) - Adiciona sem apagar o que já foi feito
+        incidentes_processados = 0
+        
+        os.makedirs("resultados", exist_ok=True)
         with open(self.ARQUIVO_SAIDA_UNSLOTH, 'a', encoding='utf-8') as f_out:
-            for idx, log in enumerate(logs_amostra):
-                numero_atual = gabaritos_prontos + idx + 1
-                logging.info(f"[{numero_atual}/{MAX_GABARITOS}] Destilando sabedoria para o IP: {log.get('id_alvo', 'Desconhecido')}")
+            for i in range(0, restantes * self.TAMANHO_LOTE, self.TAMANHO_LOTE):
+                batch_incidentes = logs_totais[i:i + self.TAMANHO_LOTE]
                 
-                prompt_incidente = (
-                    f"IP ALVO: '{log.get('id_alvo', '')}'\n"
-                    f"DADOS DO LOG BRUTO: '{log.get('padrao_ataque', '')}'\n"
-                    f"DICA RAG: '{log.get('dica_rag', '')}'"
-                )
+                # Prepara o JSON exato da camada de agente
+                lista_dicts = []
+                for log in batch_incidentes:
+                    lista_dicts.append({
+                        "id_alvo": log.get("id_alvo", "N/A"),
+                        "padrao_ataque": log.get("padrao_ataque", "N/A"),
+                        "dica_rag": log.get("dica_rag", "N/A")
+                    })
                 
-                resposta_json_str = self._pedir_gabarito(prompt_incidente)
+                prompt_usuario = json.dumps(lista_dicts, ensure_ascii=False, indent=2)
+                lote_atual = lotes_salvos + (i // self.TAMANHO_LOTE) + 1
+                logging.info(f"[{lote_atual}/{LOTE_MAXIMO}] Pedindo sabedoria para Batch de IPs: {[d['id_alvo'] for d in lista_dicts]}")
+                
+                resposta_json_str = self._pedir_gabarito(prompt_usuario)
                 
                 if resposta_json_str:
                     try:
+                        # Extrai para ver se o LLM seguiu a regra "avaliacoes"
                         resposta_limpa = json.loads(resposta_json_str)
+                        if "avaliacoes" not in resposta_limpa:
+                            resposta_limpa = {"avaliacoes": resposta_limpa} # Fallback de proteção
                         
+                        # ALINHAMENTO ABSOLUTO DE FINE TUNING: 
+                        # role: user deve ser o JSON (lista)...
+                        # role: assistant deve ser o JSON (dict com "avaliacoes")...
                         linha_treinamento = {
                             "messages": [
                                 {"role": "system", "content": self.prompt_sistema_slm},
-                                {"role": "user", "content": prompt_incidente},
+                                {"role": "user", "content": prompt_usuario},
                                 {"role": "assistant", "content": json.dumps(resposta_limpa, ensure_ascii=False)}
                             ]
                         }
                         
                         f_out.write(json.dumps(linha_treinamento, ensure_ascii=False) + "\n")
-                        # 🔴 O FLUSH GARANTE O SALVAMENTO IMEDIATO NO HD A CADA LINHA:
                         f_out.flush() 
-                        logging.info("✅ Gabarito 10/10 Salvo no disco!")
+                        logging.info("✅ Batch de Gabarito 10/10 Salvo!")
                         
                     except json.JSONDecodeError:
-                        logging.error("❌ Nemotron quebrou o JSON, pulando...")
+                        logging.error("❌ Nemotron quebrou o JSON, pulando lote...")
                 
-                time.sleep(12)
+                time.sleep(10) # Respeita Rate Limits do free tier
                 
-        logging.info(f"🎉 Forja Finalizada! Arquivo blindado e pronto no caminho: {self.ARQUIVO_SAIDA_UNSLOTH}")
+        logging.info(f"🎉 Forja Finalizada em Batches! {self.ARQUIVO_SAIDA_UNSLOTH}")
 
 if __name__ == "__main__":
     gerador = GeradorDatasetOuro()

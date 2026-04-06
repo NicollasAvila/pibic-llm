@@ -137,9 +137,11 @@ class TriagemEspacoTemporal:
                 tempo_final_lote[src] = tempo_obj
 
         # =================================================================
-        # 🧹 COLETOR DE LIXO (GARBAGE COLLECTOR - TTL)
+        # 🧹 COLETOR DE LIXO OTIMIZADO (Roda apenas quando a carga alivia)
         # =================================================================
-        if maior_tempo_deste_lote:
+        # FREIO APLICADO: Em vez de varrer milhões de IPs toda hora, 
+        # a checagem só ocorre a cada 100 blocos e apenas se o tempo mudar.
+        if maior_tempo_deste_lote and (self.lotes_processados % 100 == 0):
             tempo_limite = maior_tempo_deste_lote - timedelta(hours=self.HORAS_TTL)
             ips_para_remover = [
                 ip for ip, p in self.grafo_global.items() 

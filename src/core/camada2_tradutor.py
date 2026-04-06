@@ -38,25 +38,36 @@ class TradutorSemanticoRAG:
             self.respostas = json.load(f)
 
     def buscar_contexto(self, texto_padrao: str) -> str:
-        """
-        Recebe o comportamento do atacante, converte para vetor e busca a regra da empresa.
-        Esta é a função que o Orquestrador estava procurando!
-        """
         try:
-            # 1. Transforma a anomalia em vetor (Agora muito mais rápido se estiver na GPU)
+            # 1. Transforma a anomalia em vetor
             vetor_busca = self.modelo_embedding.encode([texto_padrao])
             
-            # 2. Procura no FAISS qual regra mais se assemelha a este vetor (k=1 significa o 1º mais próximo)
-            distancias, indices = self.indice_faiss.search(vetor_busca, k=1)
-            indice_encontrado = indices[0][0]
+            # 2. Busca os Top-2 mais próximos no FAISS para triangulação de contexto
+            k = 2
+            distancias, indices = self.indice_faiss.search(vetor_busca, k)
             
-            # 3. Retorna a regra de segurança correspondente
-            if indice_encontrado != -1 and indice_encontrado < len(self.respostas):
-                regra_mitre = self.respostas[indice_encontrado]
-                logger.debug(f"RAG Encontrou: {regra_mitre}")
-                return regra_mitre
-            else:
-                return "FALSO POSITIVO: Comportamento não mapeado na matriz de risco. Tráfego considerado benigno."
+            # 3. LÓGICA DE THRESHOLD (Corte L2 Distância)
+            # Acima de 1.2 significa "Não tem relação direta. É ruído matemático."
+            THRESHOLD_CORTE = 1.2
+            
+            dicas_encontradas = []
+            for i in range(k):
+                distancia = distancias[0][i]
+                idx_faiss = indices[0][i]
+                
+                if idx_faiss != -1 and idx_faiss < len(self.respostas):
+                    # Só confia se a distância L2 passar na margem de erro
+                    if distancia <= THRESHOLD_CORTE:
+                        dicas_encontradas.append(self.respostas[idx_faiss])
+                        
+            # Se nenhuma heurística bater com o tráfego inédito (Proteção Zero-Day)
+            if not dicas_encontradas:
+                return "RAG ZERO-DAY DETECTADO: Nenhuma regra de ameaça histórica conhecida se alinha a este tráfego. Avalie por conta própria baseado exclusivamente na anomalia de tempo/espaço."
+                
+            # Retorna todos os contextos Top-K concatenados e formatados
+            resultado_final = " | DICA RAG SECUNDÁRIA: ".join(dicas_encontradas)
+            logger.debug(f"RAG Encontrou {len(dicas_encontradas)} regras (Menor Dist: {distancias[0][0]:.2f})")
+            return resultado_final
                 
         except Exception as e:
             logger.error(f"Erro na busca vetorial RAG: {e}")
