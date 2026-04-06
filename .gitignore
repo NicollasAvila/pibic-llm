@@ -35,3 +35,5 @@ dados/vector_db/*
 # Impede que o Playbook, o Grafo e o dataset SFT sujem os commits
 resultados/*
 !resultados/.gitkeep
+# --- Ignorando artigo local ---
+artigo.pdf
