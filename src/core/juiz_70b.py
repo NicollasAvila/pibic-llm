@@ -82,8 +82,8 @@ Comece com a nota 10 em cada critério e DEDUZA pontos impiedosamente conforme a
    - Nota 0: Seguiu o RAG cegamente quando o log gritava o contrário (Falso Negativo), OU discordou do RAG sem nenhuma prova real (Falso Positivo).
 
 4. adesao_instrucao:
-   - Nota 10: Respeitou toda a formatação JSON exigida.
-   - Nota 5: Deixou campos em branco.
+   - Nota 10: O analista forneceu os campos obrigatórios (Contexto, Justificativa e Veredito) e utilizou os termos corretos. OBS: A formatação JSON original do analista já foi validada e sanitizada previamente pelo orquestrador do sistema.
+   - Nota 5: A decisão final ou a análise de contexto estão ausentes, vazias ou fora do escopo.
 
 Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
 {
@@ -182,11 +182,14 @@ Você DEVE retornar EXATAMENTE o seguinte formato JSON e nada mais:
                 f"IP ALVO: '{inc.get('id_alvo', '')}'\n"
                 f"DADOS DO LOG BRUTO: '{inc.get('padrao_ataque', '')}'\n"
                 f"DICA RAG: '{inc.get('dica_rag', '')}'\n"
-                f"ANÁLISE DO ANALISTA: '{inc.get('analise_contexto', 'Não informada')}'\n"
+                f"ANÁLISE DE CONTEXTO DO ANALISTA: '{inc.get('analise_contexto', 'Não informada')}'\n"
+                f"JUSTIFICATIVA DO ANALISTA: '{inc.get('justificativa', 'Não informada')}'\n"
                 f"DECISÃO FINAL DO ANALISTA: '{inc.get('veredito', '')}'\n\n"
+                f"====================================================\n"
                 f"[GABARITO SECRETO DO GESTOR DA REDE - USE PARA AVALIAR A ACURÁCIA]\n"
                 f"VERDADE ABSOLUTA DESTE LOG: {gabarito_txt}\n"
-                f"Se a Decisão Final do Analista contradiz a 'VERDADE ABSOLUTA', espanque a nota de 'acuracia_decisao' para 0. Ele OBRIGATORIAMENTE deveria ter dado um Veredito compátivel.\n\n"
+                f"Se a Decisão Final do Analista contradiz a 'VERDADE ABSOLUTA', espanque a nota de 'acuracia_decisao' para 0. Ele OBRIGATORIAMENTE deveria ter dado um Veredito compatível.\n"
+                f"====================================================\n\n"
                 f"Preencha o JSON estrito com a sua avaliação."
             )
             

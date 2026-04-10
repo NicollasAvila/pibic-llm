@@ -39,10 +39,10 @@ class TriagemEspacoTemporal:
         
         # Variáveis de Controle 24/7
         self.lotes_processados = 0 
-        self.HORAS_TTL = HORAS_TTL_MEMORIA  # Puxado do Config Dinâmico
+        self.HORAS_TTL = HORAS_TTL_MEMORIA
         
         # =================================================================
-        # 🚀 OTIMIZAÇÃO: COMPILAÇÃO PRÉVIA DE REGEX E MÉTRICAS DLP (PIBIC)
+        # 🚀 OTIMIZAÇÃO: COMPILAÇÃO PRÉVIA DE REGEX E MÉTRICAS (PIBIC)
         # =================================================================
         self.RE_TIME = re.compile(r'generated_time="([^"]+)"')
         self.RE_SRC  = re.compile(r'src_ip=([^\s]+)')
@@ -53,6 +53,11 @@ class TriagemEspacoTemporal:
         self.RE_APP  = re.compile(r'application=([^\s]+)')
         self.RE_RULE = re.compile(r'rule_name=([^\s]+)')
         self.RE_BYT  = re.compile(r'(?:bytes_sent|bytes|sent)=(\d+)')
+        
+        # 🔥 INTEGRAÇÃO PALO ALTO (Sugestão do Orientador)
+        self.RE_TYPE = re.compile(r'type="?([^"\s,]+)"?', re.IGNORECASE)
+        self.RE_SEVERITY = re.compile(r'severity="?([^"\s,]+)"?', re.IGNORECASE)
+        self.RE_THREAT_ID = re.compile(r'threat_id="?([^"]+)"?', re.IGNORECASE)
 
     def processar_bloco(self, lote_linhas: list) -> RelatorioTriagem:
         """Ponto de entrada chamado pelo Orquestrador."""
@@ -68,6 +73,10 @@ class TriagemEspacoTemporal:
         apps_ip = defaultdict(set)
         regras_ip = defaultdict(set)
         
+        # Novos Dicionários para a Inteligência do Palo Alto
+        severidade_ip = defaultdict(set)
+        threat_id_ip = defaultdict(set)
+        
         # Ocultamento Seguro (Blind Test) do Red Team e Controle de Volume de Dados
         red_team_ips = set()
         bytes_enviados_ip = defaultdict(int)
@@ -80,6 +89,12 @@ class TriagemEspacoTemporal:
         
         # --- FASE 1: INGESTÃO E MAPEAMENTO ---
         for linha in lote_linhas:
+            
+            # 🔥 EARLY-DROP PALO ALTO: Só analisa se o tipo for 'Traffic'
+            match_type = self.RE_TYPE.search(linha)
+            if match_type and match_type.group(1).upper() != "TRAFFIC":
+                continue # Descarta na velocidade da luz (Poupa CPU)
+                
             match_time = self.RE_TIME.search(linha)
             match_src  = self.RE_SRC.search(linha)
             match_dst  = self.RE_DST.search(linha)
@@ -106,26 +121,28 @@ class TriagemEspacoTemporal:
             perfil.total_eventos += 1
             perfil.alvos_dst.add(dst)
             perfil.portas_alvo[dpt] += 1
-            perfil.ultimo_acesso = tempo_obj  # Atualiza o relógio de vida deste IP
+            perfil.ultimo_acesso = tempo_obj 
             
-            # 2. Atualiza a Memória de Curto Prazo (para a matemática não diluir)
+            # 2. Atualiza a Memória de Curto Prazo
             eventos_no_lote[src] += 1
             
             match_loc = self.RE_LOC.search(linha)
             match_app = self.RE_APP.search(linha)
             match_rule = self.RE_RULE.search(linha)
             match_byt = self.RE_BYT.search(linha)
+            match_sev = self.RE_SEVERITY.search(linha)
+            match_tid = self.RE_THREAT_ID.search(linha)
             
             if match_loc: locais_ip[src] = match_loc.group(1)
             if match_app: apps_ip[src].add(match_app.group(1))
             if match_byt: bytes_enviados_ip[src] += int(match_byt.group(1))
             
+            # Captura a inteligência nativa do firewall
+            if match_sev: severidade_ip[src].add(match_sev.group(1).upper())
+            if match_tid: threat_id_ip[src].add(match_tid.group(1))
+            
             if match_rule:
                 regra_str = match_rule.group(1)
-                
-                # TESTE DUPLO CEGO (PIBIC)
-                # O Pipeline burla o Drop porque viu a tag Alerta_RedTeam.
-                # Agora, nós MARCAMOS que é um IP fake, mas NUNCA EXPOMOS isso nas regras pro LLM ler!
                 if regra_str == "Alerta_RedTeam":
                     red_team_ips.add(src)
                 else:
@@ -137,10 +154,8 @@ class TriagemEspacoTemporal:
                 tempo_final_lote[src] = tempo_obj
 
         # =================================================================
-        # 🧹 COLETOR DE LIXO OTIMIZADO (Roda apenas quando a carga alivia)
+        # 🧹 COLETOR DE LIXO OTIMIZADO
         # =================================================================
-        # FREIO APLICADO: Em vez de varrer milhões de IPs toda hora, 
-        # a checagem só ocorre a cada 100 blocos e apenas se o tempo mudar.
         if maior_tempo_deste_lote and (self.lotes_processados % 100 == 0):
             tempo_limite = maior_tempo_deste_lote - timedelta(hours=self.HORAS_TTL)
             ips_para_remover = [
@@ -153,34 +168,31 @@ class TriagemEspacoTemporal:
                 logger.debug(f"🧹 [Garbage Collector] Apagou {len(ips_para_remover)} IPs inativos há mais de {self.HORAS_TTL}h.")
 
         # =================================================================
-        # 💾 CHECKPOINT SEGURO (Salva o grafo a cada 50 blocos processados)
+        # 💾 CHECKPOINT SEGURO
         # =================================================================
         self.lotes_processados += 1
         if self.lotes_processados % 50 == 0:
             logger.info("💾 [Checkpoint] Salvando backup do Grafo Global no SSD...")
             self._salvar_memoria_disco()
 
-        # --- FASE 2: RACIOCÍNIO ESPAÇO-TEMPORAL (Matemática Calibrada) ---
+        # --- FASE 2: RACIOCÍNIO ESPAÇO-TEMPORAL ---
         lista_incidentes = []
-        limiar_burst = 20.0     # Usuários normais abrem 15 con/st pra baixar 1 página. 20 é o limite.
-        limiar_dispersao = 5    # Pingar mais de 5 máquinas na mesma subrede levanta suspeita
-        limiar_exfiltracao_bytes = 10000000  # Acima de 10 MB enviados gera anomalia de DLP
+        limiar_burst = 20.0     
+        limiar_dispersao = 5    
+        limiar_exfiltracao_bytes = 10000000  
         
         for ip_src in ips_ativos_neste_lote:
             perfil = self.grafo_global[ip_src]
             
-            # A JANELA DESLIZANTE: Calcula a taxa (ev/s) USANDO APENAS O TEMPO DESTE LOTE!
             delta_t = max(1.0, (tempo_final_lote[ip_src] - tempo_inicial_lote[ip_src]).total_seconds())
             taxa_atual = eventos_no_lote[ip_src] / delta_t
             
             qtd_alvos_espaciais = len(perfil.alvos_dst)
             total_bytes = bytes_enviados_ip[ip_src]
             
-            # Filtro Matemático Base: Se for tráfego lento e direcionado e pequeno volume, ignora.
             if taxa_atual <= limiar_burst and qtd_alvos_espaciais <= limiar_dispersao and total_bytes < limiar_exfiltracao_bytes:
                 continue
 
-            # Construção das Strings de Contexto para o LLM
             if taxa_atual > limiar_burst:
                 char_temporal = f"[BURST AGUDO] Taxa atual de {taxa_atual:.1f} ev/s."
             else:
@@ -201,14 +213,17 @@ class TriagemEspacoTemporal:
             regras = ", ".join(list(regras_ip[ip_src])[:2]) if regras_ip[ip_src] else "Variaveis"
             porta_principal = max(perfil.portas_alvo, key=perfil.portas_alvo.get) if perfil.portas_alvo else "N/A"
             
-            # Geração do Prompt Denso SEm POLUIR COM DADOS FACCIONADOS (Blind Test)
+            # 🔥 INJEÇÃO PALO ALTO: A IA agora lê a Severidade e o Nome do Ataque do Firewall
+            sev_str = f" | FW-SEVERIDADE: {', '.join(severidade_ip[ip_src])}" if severidade_ip[ip_src] else ""
+            tid_str = f" | FW-THREAT: {', '.join(threat_id_ip[ip_src])}" if threat_id_ip[ip_src] else ""
+            
             st_align_texto = (
                 f"ST-ALIGN | ORIGEM: {ip_src} ({local}) | EVENTOS TOTAIS HOJE: {perfil.total_eventos} | "
                 f"ESPAÇO: {char_espacial} | TEMPO: {char_temporal}{char_volume} | "
                 f"FIREWALL: Regras [{regras}], App [{apps}]. ALVO CENTRAL: Porta {porta_principal}."
+                f"{sev_str}{tid_str}" # Contexto extra injetado aqui
             )
             
-            # Monta o objeto Pydantic com o rastro cego (is_red_team) 
             incidente = Incidente(
                 id_alvo=ip_src,
                 padrao_ataque=st_align_texto,
@@ -219,10 +234,8 @@ class TriagemEspacoTemporal:
         return lista_incidentes
 
     def _salvar_memoria_disco(self):
-        """Faz um dump assíncrono do dicionário na memória RAM para o SSD."""
         try:
             os.makedirs(os.path.dirname(self.ARQUIVO_MEMORIA), exist_ok=True)
-            # Converte o Grafo (Set) para formatos serializáveis em JSON
             dados_salvar = {}
             for ip, perfil in self.grafo_global.items():
                 dados_salvar[ip] = {
