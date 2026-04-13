@@ -18,8 +18,8 @@ Para viabilizar isso, o projeto abandona a leitura "força bruta" de logs brutos
 O fluxo de dados foi desenhado para garantir latência ultrabaixa e zero alucinação de formato:
 
 * **Fase 1: Funil de Ingestão e Preparação (Tempo Real)**
-  * **Camada 1 (Triagem Determinística):** Uso de scripts Python com Expressões Regulares (Regex) para filtrar e descartar até 90% do tráfego interno benigno.
-  * **Camada 2 (Tradução Semântica e RAG):** O log bruto restante é condensado em uma sentença de texto curta. O script realiza uma busca ultrarrápida em memória via **FAISS** (Threat Intelligence) e anota o log com *Tags Espaço-Temporais* (ex: `[MADRUGADA] [IP_EXTERNO]`), poupando a IA de processar dados inúteis.
+  * **Camada 1 (Triagem Determinística e Regex O(1)):** Uso de scripts Python com Expressões Regulares avançadas (extraindo inteligência nativa do firewall Palo Alto, como *Severity* e *Threat ID*, com descartes *Early-Drop* O(1)) apurando o tráfego em baixa latência antes do repasse em IA.
+  * **Camada 2 (Tradução Semântica, AbuseIPDB e RAG):** O log residual é condensado em uma sentença leve. O script consulta apis de Threat Intelligence Externas (**AbuseIPDB**) agregadas a uma busca rápida vetorial em memória via **FAISS**, e anota o log final com *Tags Espaço-Temporais* estruturadas para não sobrecarregar a janela de contexto.
 
 * **Fase 2: Inferência Agêntica (Tempo Real)**
   * **Camada 3 (SLM Especialista):** Modelos de 1.5B a 3B de parâmetros (ex: Qwen2.5 ou Llama-3.2) quantizados em formato `GGUF` (4-bits). Recebem blocos de logs traduzidos (*Batching*) e executam ferramentas simuladas (*Model Context Protocol - MCP*) para emitir o Playbook de Resposta estruturado em JSON.
@@ -56,7 +56,8 @@ pibic-llm/
 
 ### Pré-requisitos
 * Python 3.10 ou superior.
-* Chave de API da [Groq Cloud](https://console.groq.com/) (Para o LLM Juiz).
+* Chave de API da [Groq Cloud](https://console.groq.com/) (Para o LLM Juiz do MLOps).
+* Chave de API do [AbuseIPDB](https://www.abuseipdb.com/) (Threat Intelligence de IP).
 
 ### 1. Instalação Básica
 
@@ -76,7 +77,7 @@ pip install -r requirements.txt
 
 ### 2. Configuração do Modelo e API
 
-1. Renomeie o arquivo `.env.example` para `.env` e coloque sua chave Groq (`GROQ_API_KEY=sua_chave_aqui`).
+1. Renomeie o arquivo `.env.example` para `.env` e defina suas chaves de API (`GROQ_API_KEY=sua_chave` e `ABUSEIPDB_API_KEY=sua_chave`).
 2. Garanta que o LLM local está rodando (via Ollama na porta padrão `11434` ou baixando um `.gguf` conforme o mapeamento no `src/config.py`).
 
 ### 3. Operando o SOC via Painel Interativo

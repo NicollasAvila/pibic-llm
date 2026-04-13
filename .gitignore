@@ -36,4 +36,5 @@ dados/vector_db/*
 resultados/*
 !resultados/.gitkeep
 # --- Ignorando artigo local ---
+artigo/
 artigo.pdf
